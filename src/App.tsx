@@ -12,6 +12,7 @@ import type { Comment, Folder, Room, Furniture, FurniturePreset } from "./lib/ty
 import { FURNITURE_PRESETS } from "./lib/types";
 import type { Point } from "./lib/geometry";
 import type { Unit } from "./lib/units";
+import { fromCm, toCm } from "./lib/units";
 import { computeScale } from "./lib/geometry";
 import {
   createComment,
@@ -308,6 +309,11 @@ export default function App() {
     updateActiveRoom({ unit });
   }
 
+  function handleCeilingHeightChange(valueInCurrentUnit: number) {
+    if (!activeRoom) return;
+    updateActiveRoom({ ceilingHeight: toCm(valueInCurrentUnit, activeRoom.unit) });
+  }
+
   function bringToFront(panel: "rooms" | "items" | "comments") {
     setPanelOrder((prev) => [...prev.filter((p) => p !== panel), panel]);
   }
@@ -433,6 +439,17 @@ export default function App() {
                 Side
               </button>
             </div>
+            {view === "side" && (
+              <label className="mode-bar__ceiling mono" title="Ceiling height used for the dashed reference line in Side view">
+                Ceiling
+                <input
+                  type="number"
+                  value={fromCm(activeRoom.ceilingHeight, activeRoom.unit).toFixed(1)}
+                  onChange={(e) => handleCeilingHeightChange(Number(e.target.value))}
+                />
+                <span>{activeRoom.unit}</span>
+              </label>
+            )}
             <UnitsToggle unit={activeRoom.unit} onChange={handleUnitChange} />
             <button onClick={handleUploadClick}>Upload Floorplan</button>
             {activeRoom.floorplanImageUrl && (
@@ -474,7 +491,7 @@ export default function App() {
               furniture={activeRoom.furniture}
               scalePxPerUnit={activeRoom.scalePxPerUnit}
               unit={activeRoom.unit}
-              ceilingHeightCm={Math.max(240, ...activeRoom.furniture.filter((f) => f.kind === "wall").map((f) => f.height), 0)}
+              ceilingHeightCm={activeRoom.ceilingHeight}
               selectedFurnitureId={selectedFurnitureId}
               onSelectFurniture={setSelectedFurnitureId}
             />

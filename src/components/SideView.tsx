@@ -25,6 +25,10 @@ export default function SideView({
   onSelectFurniture,
 }: SideViewProps) {
   const ceilingPx = ceilingHeightCm * PX_PER_CM;
+  const selectedItem = furniture.find((f) => f.id === selectedFurnitureId) ?? null;
+
+  // Walls drawn first so they sit behind furniture/doors/readers instead of covering them.
+  const ordered = [...furniture].sort((a, b) => (a.kind === "wall" ? -1 : 0) - (b.kind === "wall" ? -1 : 0));
 
   return (
     <div className="floorplan-canvas">
@@ -63,40 +67,82 @@ export default function SideView({
             CEILING {formatLength(ceilingHeightCm, unit)}
           </text>
 
-          {furniture
-            .filter((item) => item.kind !== "wall")
-            .map((item) => {
-              const wPx = item.width * PX_PER_CM;
-              const hPx = item.height * PX_PER_CM;
-              const itemXCm = item.x * (scalePxPerUnit || 1);
-              const itemX = itemXCm * PX_PER_CM - wPx / 2;
-              const itemBottom = FLOOR_Y - item.elevation * PX_PER_CM;
-              const itemY = itemBottom - hPx;
-              const isSelected = item.id === selectedFurnitureId;
-              return (
-                <g key={item.id} onClick={(e) => { e.stopPropagation(); onSelectFurniture(item.id); }} style={{ cursor: "pointer" }}>
-                  <title>{`${item.label} — ${formatLength(item.width, unit)} wide x ${formatLength(item.height, unit)} tall`}</title>
-                  <rect
-                    x={itemX}
-                    y={itemY}
-                    width={wPx}
-                    height={hPx}
-                    rx={2}
-                    fill={item.color}
-                    fillOpacity="0.75"
-                    stroke={isSelected ? "var(--color-accent)" : "var(--color-line)"}
-                    strokeWidth={isSelected ? 2.5 : 1.2}
-                  />
-                  <text x={itemX + wPx / 2} y={itemY - 6} textAnchor="middle" className="mono floorplan-canvas__furniture-label" fontSize="10">
-                    {item.label} · {formatLength(item.height, unit)}
-                  </text>
-                </g>
-              );
-            })}
+          {ordered.map((item) => {
+            const wPx = item.width * PX_PER_CM;
+            const hPx = item.height * PX_PER_CM;
+            const itemXCm = item.x * (scalePxPerUnit || 1);
+            const itemX = itemXCm * PX_PER_CM - wPx / 2;
+            const itemBottom = FLOOR_Y - item.elevation * PX_PER_CM;
+            const itemY = itemBottom - hPx;
+            const isSelected = item.id === selectedFurnitureId;
+            const isWall = item.kind === "wall";
+            return (
+              <g
+                key={item.id}
+                className="floorplan-canvas__item-group"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectFurniture(item.id);
+                }}
+                style={{ cursor: "pointer" }}
+              >
+                <title>{`${item.label} — ${formatLength(item.width, unit)} wide x ${formatLength(item.height, unit)} tall`}</title>
+                <rect
+                  x={itemX}
+                  y={itemY}
+                  width={wPx}
+                  height={hPx}
+                  rx={2}
+                  fill={item.color}
+                  fillOpacity={isWall ? 0.4 : 0.8}
+                  stroke={isSelected ? "var(--color-accent)" : "var(--color-line)"}
+                  strokeWidth={isSelected ? 3 : 1.2}
+                />
+                {isSelected && (
+                  <>
+                    <rect
+                      x={itemX - 5}
+                      y={itemY - 5}
+                      width={wPx + 10}
+                      height={hPx + 10}
+                      fill="none"
+                      stroke="var(--color-accent)"
+                      strokeWidth="1.5"
+                      strokeDasharray="5 4"
+                    />
+                    {/* Floor marker showing this item's X position */}
+                    <line x1={itemX + wPx / 2} y1={FLOOR_Y - 6} x2={itemX + wPx / 2} y2={FLOOR_Y + 6} stroke="var(--color-accent)" strokeWidth="2" />
+                  </>
+                )}
+                <text
+                  x={itemX + wPx / 2}
+                  y={itemY - 8}
+                  textAnchor="middle"
+                  className="mono floorplan-canvas__furniture-label"
+                  fontSize={isSelected ? 11 : 10}
+                  fontWeight={isSelected ? 700 : 400}
+                  fill={isSelected ? "var(--color-accent)" : undefined}
+                  paintOrder="stroke"
+                  stroke="var(--color-paper)"
+                  strokeWidth="3"
+                  strokeLinejoin="round"
+                >
+                  {item.label} · {formatLength(item.height, unit)}
+                </text>
+              </g>
+            );
+          })}
         </svg>
       </div>
       <div className="floorplan-canvas__hud mono">
         <span>SIDE VIEW</span>
+        {selectedItem ? (
+          <span className="floorplan-canvas__hud-selected">
+            SELECTED: {selectedItem.label} — {formatLength(selectedItem.width, unit)} W × {formatLength(selectedItem.height, unit)} H
+          </span>
+        ) : (
+          <span>CLICK AN ITEM TO SELECT IT</span>
+        )}
         <span>ITEMS PROJECTED ALONG X — DEPTH NOT SHOWN</span>
       </div>
     </div>

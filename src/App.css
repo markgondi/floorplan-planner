@@ -416,6 +416,19 @@
   opacity: 0.5;
 }
 
+.mode-bar__ceiling {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-line-soft);
+}
+
+.mode-bar__ceiling input {
+  width: 52px;
+  padding: 3px 5px;
+}
+
 .mode-bar__status {
   padding: 3px 16px;
   font-size: 10px;
@@ -507,6 +520,11 @@
   border-radius: var(--radius-sm);
   padding: 6px 10px;
   box-shadow: var(--shadow-panel);
+}
+
+.floorplan-canvas__hud-selected {
+  color: var(--color-accent);
+  font-weight: 600;
 }
 
 .floorplan-canvas__zoom-controls {

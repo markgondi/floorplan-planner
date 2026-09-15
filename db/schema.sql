@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS rooms (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL,
+  ceiling_height REAL NOT NULL DEFAULT 240,
   scale_px_per_unit REAL,
   unit TEXT DEFAULT 'cm',
   floorplan_image_url TEXT,

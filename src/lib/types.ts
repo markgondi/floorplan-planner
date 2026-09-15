@@ -45,6 +45,7 @@ export interface Room {
   id: string;
   name: string;
   folderId: string | null;
+  ceilingHeight: number;
   scalePxPerUnit: number;
   unit: Unit;
   floorplanImageUrl: string | null;
