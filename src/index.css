@@ -3,62 +3,50 @@ html, body, #root {
   margin: 0;
 }
 
-* {
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-}
-
 button {
   font-family: var(--font-ui);
   background: var(--color-surface);
   color: var(--color-charcoal);
-  border: 1px solid var(--color-line-soft);
+  border: 1px solid var(--color-hairline);
   border-radius: var(--radius-sm);
   padding: 4px 10px;
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease, transform 0.1s ease, box-shadow 0.14s ease;
 }
 
 button:hover {
   background: var(--color-surface-alt);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
 button:active {
-  transform: translateY(0);
-  box-shadow: none;
+  transform: translateY(0.5px);
 }
 
 button:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
   transform: none;
-  box-shadow: none;
 }
 
-button.active,
-.app-header__theme-toggle {
-  border-color: var(--color-line);
-}
-
-input {
+input, select {
   font-family: var(--font-ui);
   background: var(--color-paper);
   color: var(--color-charcoal);
-  border: 1px solid var(--color-line-soft);
+  border: 1px solid var(--color-hairline);
   border-radius: var(--radius-sm);
   padding: 4px 6px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
 }
 
 input:focus, select:focus {
   outline: none;
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 25%, transparent);
+  box-shadow: 0 0 0 2px var(--color-accent-wash);
 }
 
 input[type="number"] {
   -moz-appearance: textfield;
+  font-variant-numeric: tabular-nums;
 }
 
 input[type="number"]::-webkit-outer-spin-button,
@@ -67,22 +55,35 @@ input[type="number"]::-webkit-inner-spin-button {
   margin: 0;
 }
 
-select {
-  font-family: var(--font-ui);
-  background: var(--color-paper);
-  color: var(--color-charcoal);
-  border: 1px solid var(--color-line-soft);
-  border-radius: var(--radius-sm);
-  transition: border-color 0.15s ease;
-}
-
 ::selection {
   background: var(--color-accent);
-  color: var(--color-paper);
+  color: var(--color-on-accent);
+}
+
+/* Thin, unobtrusive scrollbars — panel chrome shouldn't compete with the drawing. */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-hairline);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-line-soft);
+  background-clip: content-box;
 }
 
 @media print {
-  .app-header, .room-list, .furniture-panel, .mode-bar {
+  .app-header, .action-bar, .tool-rail, .sidebar, .status-bar, .canvas-dock {
     display: none !important;
   }
 }

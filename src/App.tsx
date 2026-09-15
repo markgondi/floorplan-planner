@@ -7,13 +7,15 @@ import CommentsPanel from "./components/CommentsPanel";
 import FloorplanCanvas, { type FloorplanCanvasHandle } from "./components/FloorplanCanvas";
 import SideView from "./components/SideView";
 import UnitsToggle from "./components/UnitsToggle";
-import DraggablePanel from "./components/DraggablePanel";
+import Sidebar from "./components/Sidebar";
+import ToolRail, { type Mode } from "./components/ToolRail";
+import StatusBar from "./components/StatusBar";
 import type { Comment, Folder, Room, Furniture, FurniturePreset } from "./lib/types";
 import { FURNITURE_PRESETS } from "./lib/types";
 import type { Point } from "./lib/geometry";
 import type { Unit } from "./lib/units";
-import { fromCm, toCm } from "./lib/units";
-import { computeScale, mergeCollinearWalls } from "./lib/geometry";
+import { formatLength, fromCm, toCm } from "./lib/units";
+import { computeScale, mergeCollinearWalls, polygonPerimeterSegments, pxToReal } from "./lib/geometry";
 import {
   createComment,
   createFolder,
@@ -29,14 +31,12 @@ import {
   setCommentResolved,
 } from "./lib/api";
 
-type Mode = "trace" | "calibrate" | "place" | "pan" | "comment";
-
 const MODE_HELP: Record<Mode, string> = {
-  trace: "Click points on the canvas to draw the room's wall outline — points snap to the grid. Click near the first point to close the shape.",
-  calibrate: "Click two points on a known wall segment, then enter its real-world length — or use \"Grid = 1m\" to set the scale from the grid directly.",
-  place: "Drag items to move them; click one to select it and edit it in the ITEMS panel. Click a room wall to select it, then open Side view to see that wall's elevation.",
-  pan: "Click and drag anywhere on the canvas to move around. Nothing is added or changed while panning.",
-  comment: "Click anywhere on the canvas to leave a comment pin for reviewers. Resolve or delete comments from the panel.",
+  select: "Select — click a wall or an item to select it. Drag empty space to pan around.",
+  walls: "Walls — click points to draw the room outline. Points snap to the grid.",
+  scale: "Scale — click two points on a wall of known length, then enter it. Or use Grid = 1m.",
+  arrange: "Arrange — drag items to move them, then rotate or resize from the Items panel.",
+  comment: "Comment — click anywhere to leave a pin for reviewers.",
 };
 
 const PRESETS_STORAGE_KEY = "floorplan-planner:presets";
@@ -72,16 +72,20 @@ export default function App() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
-  const [mode, setMode] = useState<Mode>("trace");
+  const [mode, setMode] = useState<Mode>("select");
   const [view, setView] = useState<"top" | "side">("top");
   const [theme, setTheme] = useState<"light" | "dark">("dark");
   const [selectedFurnitureId, setSelectedFurnitureId] = useState<string | null>(null);
   const [selectedWallIndex, setSelectedWallIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [panelOrder, setPanelOrder] = useState<("rooms" | "items" | "comments")[]>(["rooms", "items", "comments"]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [presets, setPresets] = useState<FurniturePreset[]>(loadPresets);
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [rightTab, setRightTab] = useState("items");
+  const [zoom, setZoom] = useState(0.6);
+  const [cursor, setCursor] = useState<Point | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didInit = useRef(false);
   const canvasRef = useRef<FloorplanCanvasHandle>(null);
@@ -102,7 +106,7 @@ export default function App() {
           setRooms([room]);
           setActiveRoomId(room.id);
         }
-      } catch (err) {
+      } catch {
         setSyncError("Could not reach the server — check TURSO_DATABASE_URL / TURSO_AUTH_TOKEN and that netlify dev is running.");
       } finally {
         setLoading(false);
@@ -133,9 +137,25 @@ export default function App() {
     setSelectedFurnitureId(null);
   }, [activeRoomId]);
 
+  // Side view always shows exactly one wall, so pick the first if none is chosen yet.
+  useEffect(() => {
+    if (view !== "side") return;
+    setSelectedWallIndex((current) => {
+      if (current !== null) return current;
+      const room = rooms.find((r) => r.id === activeRoomId);
+      const runs = room ? mergeCollinearWalls(room.outline) : [];
+      return runs.length > 0 ? 0 : null;
+    });
+  }, [view, activeRoomId, rooms]);
+
   const activeRoom = rooms.find((r) => r.id === activeRoomId) ?? null;
   const wallRuns = activeRoom ? mergeCollinearWalls(activeRoom.outline) : [];
   const selectedWall = selectedWallIndex !== null ? (wallRuns[selectedWallIndex] ?? null) : null;
+  const selectedItem = activeRoom?.furniture.find((f) => f.id === selectedFurnitureId) ?? null;
+  const wallCount = wallRuns.length;
+  const perimeterPx = activeRoom
+    ? polygonPerimeterSegments(activeRoom.outline).reduce((sum, s) => sum + s.length, 0)
+    : 0;
 
   // Selecting an item and selecting a wall are mutually exclusive, like most CAD tools.
   function handleSelectFurniture(id: string | null) {
@@ -328,10 +348,6 @@ export default function App() {
     updateActiveRoom({ ceilingHeight: toCm(valueInCurrentUnit, activeRoom.unit) });
   }
 
-  function bringToFront(panel: "rooms" | "items" | "comments") {
-    setPanelOrder((prev) => [...prev.filter((p) => p !== panel), panel]);
-  }
-
   async function handleAddComment(point: Point) {
     if (!activeRoom) return;
     const text = window.prompt("Add a comment:");
@@ -339,6 +355,7 @@ export default function App() {
     try {
       const comment = await createComment(activeRoom.id, point.x, point.y, text);
       setComments((prev) => [...prev, comment]);
+      setRightTab("comments");
     } catch {
       setSyncError("Failed to save the comment to the server.");
     }
@@ -389,14 +406,23 @@ export default function App() {
     return (
       <div className="app-shell" data-theme={theme}>
         <Header theme={theme} onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))} />
-        <div className="app-main__empty">Loading rooms…</div>
+        <div className="app-loading mono">Loading rooms…</div>
       </div>
     );
   }
 
+  const openComments = comments.filter((c) => !c.resolved).length;
+  const unit = activeRoom?.unit ?? "cm";
+
   return (
     <div className="app-shell" data-theme={theme}>
-      <Header theme={theme} onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))} />
+      <Header
+        theme={theme}
+        onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+        roomName={activeRoom?.name ?? null}
+        folderName={folders.find((f) => f.id === activeRoom?.folderId)?.name ?? null}
+      />
+
       {syncError && (
         <div className="sync-banner">
           <span>{syncError}</span>
@@ -407,129 +433,96 @@ export default function App() {
       )}
 
       {activeRoom && (
-        <div className="mode-bar">
-          <div className="mode-bar__modes">
-            <button className={mode === "trace" ? "active" : ""} onClick={() => setMode("trace")} title={MODE_HELP.trace}>
-              Trace outline
-            </button>
-            <button className={mode === "calibrate" ? "active" : ""} onClick={() => setMode("calibrate")} title={MODE_HELP.calibrate}>
-              Calibrate scale
-            </button>
-            <button className={mode === "place" ? "active" : ""} onClick={() => setMode("place")} title={MODE_HELP.place}>
-              Place items
-            </button>
-            <button className={mode === "pan" ? "active" : ""} onClick={() => setMode("pan")} title={MODE_HELP.pan}>
-              Pan canvas
-            </button>
-            <button className={mode === "comment" ? "active" : ""} onClick={() => setMode("comment")} title={MODE_HELP.comment}>
-              Comment
-            </button>
-            {mode === "trace" && activeRoom.outline.length > 0 && (
-              <>
-                <span className="mode-bar__divider" />
-                <button onClick={handleUndoOutlinePoint} title="Remove the last traced point">
-                  Undo Point
-                </button>
-                <button onClick={handleClearOutline} title="Clear the whole traced outline">
-                  Clear Outline
-                </button>
-              </>
-            )}
-            {mode === "calibrate" && (
-              <>
-                <span className="mode-bar__divider" />
-                <button onClick={handleSetGridScale} title="Set the scale so one major grid square equals exactly 1 metre">
-                  Grid = 1m
-                </button>
-              </>
-            )}
-          </div>
-          <div className="mode-bar__right">
-            <div className="units-toggle mono">
-              <button className={view === "top" ? "active" : ""} onClick={() => setView("top")} title="Top-down plan view">
+        <div className="action-bar">
+          <div className="action-bar__group">
+            <div className="seg mono">
+              <button className={view === "top" ? "seg__btn seg__btn--active" : "seg__btn"} onClick={() => setView("top")}>
                 Top
               </button>
-              <button
-                className={view === "side" ? "active" : ""}
-                onClick={() => setView("side")}
-                title="Side elevation view — select a wall in Top view (Place items mode) to see that wall's elevation"
-              >
+              <button className={view === "side" ? "seg__btn seg__btn--active" : "seg__btn"} onClick={() => setView("side")}>
                 Side
               </button>
             </div>
+            <UnitsToggle unit={activeRoom.unit} onChange={handleUnitChange} />
+            {view === "side" && wallCount > 0 && (
+              <div className="stepper mono" title="Which wall this elevation is looking at">
+                <button
+                  className="stepper__btn"
+                  onClick={() => setSelectedWallIndex(((selectedWallIndex ?? 0) - 1 + wallCount) % wallCount)}
+                  disabled={wallCount < 2}
+                >
+                  ‹
+                </button>
+                <span className="stepper__value">
+                  Wall {(selectedWallIndex ?? 0) + 1} <span className="stepper__of">of {wallCount}</span>
+                </span>
+                <button
+                  className="stepper__btn"
+                  onClick={() => setSelectedWallIndex(((selectedWallIndex ?? 0) + 1) % wallCount)}
+                  disabled={wallCount < 2}
+                >
+                  ›
+                </button>
+              </div>
+            )}
             {view === "side" && (
-              <label className="mode-bar__ceiling mono" title="Ceiling height used for the dashed reference line in Side view">
-                Ceiling
+              <label className="field mono" title="Ceiling height for the Side view reference line">
+                <span>Ceiling</span>
                 <input
                   type="number"
                   value={fromCm(activeRoom.ceilingHeight, activeRoom.unit).toFixed(1)}
                   onChange={(e) => handleCeilingHeightChange(Number(e.target.value))}
                 />
-                <span>{activeRoom.unit}</span>
+                <span className="field__unit">{activeRoom.unit}</span>
               </label>
             )}
-            <UnitsToggle unit={activeRoom.unit} onChange={handleUnitChange} />
-            <button onClick={handleUploadClick}>Upload Floorplan</button>
+          </div>
+
+          <div className="action-bar__group">
+            {mode === "walls" && activeRoom.outline.length > 0 && (
+              <>
+                <button className="btn-ghost" onClick={handleUndoOutlinePoint}>
+                  Undo Point
+                </button>
+                <button className="btn-ghost" onClick={handleClearOutline}>
+                  Clear Outline
+                </button>
+                <span className="action-bar__divider" />
+              </>
+            )}
+            {mode === "scale" && (
+              <>
+                <button className="btn-ghost" onClick={handleSetGridScale} title="One major grid square = 1 metre">
+                  Grid = 1m
+                </button>
+                <span className="action-bar__divider" />
+              </>
+            )}
+            <button className="btn-ghost" onClick={handleUploadClick}>
+              Upload Plan
+            </button>
             {activeRoom.floorplanImageUrl && (
-              <button onClick={handleRemoveFloorplanImage} title="Remove the uploaded floorplan image">
-                Remove Floorplan
+              <button className="btn-ghost" onClick={handleRemoveFloorplanImage}>
+                Remove Plan
               </button>
             )}
             <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleFileChange} />
-            <button onClick={() => canvasRef.current?.exportPng()} disabled={view === "side"} title={view === "side" ? "Switch to Top view to export" : undefined}>
+            <button
+              className="btn-primary"
+              onClick={() => canvasRef.current?.exportPng()}
+              disabled={view === "side"}
+              title={view === "side" ? "Switch to Top view to export" : "Export this plan as a PNG"}
+            >
               Export PNG
             </button>
           </div>
         </div>
       )}
-      {activeRoom && <div className="mode-bar__status mono">{MODE_HELP[mode]}</div>}
 
-      <div className="app-body">
-        {activeRoom ? (
-          view === "top" ? (
-            <FloorplanCanvas
-              ref={canvasRef}
-              roomName={activeRoom.name}
-              outline={activeRoom.outline}
-              scalePxPerUnit={activeRoom.scalePxPerUnit}
-              unit={activeRoom.unit}
-              furniture={activeRoom.furniture}
-              comments={comments}
-              selectedFurnitureId={selectedFurnitureId}
-              imageUrl={activeRoom.floorplanImageUrl}
-              mode={mode}
-              onOutlineChange={(outline) => updateActiveRoom({ outline })}
-              onCalibrate={handleCalibrate}
-              onFurnitureChange={handleUpdateFurniture}
-              onSelectFurniture={handleSelectFurniture}
-              onAddComment={handleAddComment}
-              selectedWallIndex={selectedWallIndex}
-              onSelectWall={setSelectedWallIndex}
-            />
-          ) : (
-            <SideView
-              furniture={activeRoom.furniture}
-              scalePxPerUnit={activeRoom.scalePxPerUnit}
-              unit={activeRoom.unit}
-              ceilingHeightCm={activeRoom.ceilingHeight}
-              selectedWall={selectedWall}
-              selectedWallIndex={selectedWallIndex}
-              selectedFurnitureId={selectedFurnitureId}
-              onSelectFurniture={handleSelectFurniture}
-            />
-          )
-        ) : (
-          <div className="app-main__empty">Create a room to get started.</div>
-        )}
+      <div className="workspace">
+        <ToolRail mode={mode} onModeChange={setMode} help={MODE_HELP} />
 
-        <DraggablePanel
-          title="ROOMS"
-          defaultPosition={{ x: 16, y: 16 }}
-          width={260}
-          height={340}
-          zIndex={panelOrder.indexOf("rooms") + 10}
-          onFocus={() => bringToFront("rooms")}
-        >
+        <Sidebar side="left" title="Rooms" collapsed={leftCollapsed} onToggle={() => setLeftCollapsed((c) => !c)}>
           <RoomList
             rooms={rooms}
             folders={folders}
@@ -543,45 +536,102 @@ export default function App() {
             onRenameFolder={handleRenameFolder}
             onDeleteFolder={handleDeleteFolder}
           />
-        </DraggablePanel>
+        </Sidebar>
+
+        <main className="canvas-area">
+          {activeRoom ? (
+            view === "top" ? (
+              <FloorplanCanvas
+                ref={canvasRef}
+                roomName={activeRoom.name}
+                outline={activeRoom.outline}
+                scalePxPerUnit={activeRoom.scalePxPerUnit}
+                unit={activeRoom.unit}
+                furniture={activeRoom.furniture}
+                comments={comments}
+                selectedFurnitureId={selectedFurnitureId}
+                imageUrl={activeRoom.floorplanImageUrl}
+                mode={mode}
+                onOutlineChange={(outline) => updateActiveRoom({ outline })}
+                onCalibrate={handleCalibrate}
+                onFurnitureChange={handleUpdateFurniture}
+                onSelectFurniture={handleSelectFurniture}
+                onAddComment={handleAddComment}
+                selectedWallIndex={selectedWallIndex}
+                onSelectWall={setSelectedWallIndex}
+                zoom={zoom}
+                onZoomChange={(updater) => setZoom((z) => updater(z))}
+                onCursorMove={setCursor}
+              />
+            ) : (
+              <SideView
+                furniture={activeRoom.furniture}
+                scalePxPerUnit={activeRoom.scalePxPerUnit}
+                unit={activeRoom.unit}
+                ceilingHeightCm={activeRoom.ceilingHeight}
+                selectedWall={selectedWall}
+                selectedWallIndex={selectedWallIndex}
+                selectedFurnitureId={selectedFurnitureId}
+                onSelectFurniture={handleSelectFurniture}
+              />
+            )
+          ) : (
+            <div className="canvas-area__empty mono">Create a room to get started</div>
+          )}
+        </main>
 
         {activeRoom && (
-          <DraggablePanel
-            title="ITEMS"
-            defaultPosition={{ x: Math.max(220, window.innerWidth - 340), y: 16 }}
-            width={320}
-            height={520}
-            zIndex={panelOrder.indexOf("items") + 10}
-            onFocus={() => bringToFront("items")}
+          <Sidebar
+            side="right"
+            title={rightTab === "items" ? "Items" : "Comments"}
+            collapsed={rightCollapsed}
+            onToggle={() => setRightCollapsed((c) => !c)}
+            tabs={[
+              { id: "items", label: "Items", badge: activeRoom.furniture.length || undefined },
+              { id: "comments", label: "Comments", badge: openComments || undefined },
+            ]}
+            activeTab={rightTab}
+            onTabChange={setRightTab}
           >
-            <FurniturePanel
-              furniture={activeRoom.furniture}
-              unit={activeRoom.unit}
-              selectedId={selectedFurnitureId}
-              presets={presets}
-              onSelect={handleSelectFurniture}
-              onAddPreset={handleAddPreset}
-              onUpdatePreset={handleUpdatePreset}
-              onUpdate={handleUpdateFurniture}
-              onDelete={handleDeleteFurniture}
-              onDuplicate={handleDuplicateFurniture}
-            />
-          </DraggablePanel>
-        )}
-
-        {activeRoom && (
-          <DraggablePanel
-            title={`COMMENTS${comments.filter((c) => !c.resolved).length > 0 ? ` (${comments.filter((c) => !c.resolved).length})` : ""}`}
-            defaultPosition={{ x: 16, y: Math.max(180, window.innerHeight - 340) }}
-            width={260}
-            height={300}
-            zIndex={panelOrder.indexOf("comments") + 10}
-            onFocus={() => bringToFront("comments")}
-          >
-            <CommentsPanel comments={comments} onResolve={handleResolveComment} onDelete={handleDeleteComment} />
-          </DraggablePanel>
+            {rightTab === "items" ? (
+              <FurniturePanel
+                furniture={activeRoom.furniture}
+                unit={activeRoom.unit}
+                selectedId={selectedFurnitureId}
+                presets={presets}
+                onSelect={handleSelectFurniture}
+                onAddPreset={handleAddPreset}
+                onUpdatePreset={handleUpdatePreset}
+                onUpdate={handleUpdateFurniture}
+                onDelete={handleDeleteFurniture}
+                onDuplicate={handleDuplicateFurniture}
+              />
+            ) : (
+              <CommentsPanel comments={comments} onResolve={handleResolveComment} onDelete={handleDeleteComment} />
+            )}
+          </Sidebar>
         )}
       </div>
+
+      <StatusBar
+        view={view}
+        zoom={zoom}
+        cursor={cursor}
+        scalePxPerUnit={activeRoom?.scalePxPerUnit ?? 0}
+        unit={unit}
+        perimeterCm={
+          activeRoom && activeRoom.outline.length > 1 && activeRoom.scalePxPerUnit
+            ? pxToReal(perimeterPx, activeRoom.scalePxPerUnit)
+            : null
+        }
+        selectionLabel={selectedItem ? `${selectedItem.label} · ${formatLength(selectedItem.width, unit)} × ${formatLength(selectedItem.height, unit)}` : null}
+        wallLabel={
+          selectedWall && selectedWallIndex !== null && activeRoom?.scalePxPerUnit
+            ? `${selectedWallIndex + 1} · ${formatLength(pxToReal(selectedWall.length, activeRoom.scalePxPerUnit), unit)}`
+            : null
+        }
+        hint={MODE_HELP[mode]}
+      />
     </div>
   );
 }

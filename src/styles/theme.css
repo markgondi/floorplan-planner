@@ -1,39 +1,56 @@
 :root {
-  --color-bg: #17140f;
-  --color-surface: #1f1b15;
-  --color-surface-alt: #2a251c;
-  --color-line: #d8c9a8;
-  --color-line-soft: #8a7c62;
-  --color-charcoal: #f2ead9;
-  --color-charcoal-soft: #ddd0ae;
-  --color-accent: #d97b52;
-  --color-accent-soft: #e6a483;
-  --color-danger: #e0655a;
-  --color-paper: #131110;
-  --color-canvas: #0d0c0a;
-  --color-grid: #3a352c;
-  --font-ui: "Segoe UI", system-ui, sans-serif;
-  --font-mono: "Cascadia Code", "Consolas", monospace;
+  /* Dark is the working default — a CAD surface should sit quiet under the drawing. */
+  --color-bg: #141210;
+  --color-canvas: #0e0d0b;
+  --color-surface: #1c1917;
+  --color-surface-alt: #262220;
+  --color-paper: #201d1a;
+  --color-hairline: #2f2a26;
+  --color-grid: #2b2623;
+
+  --color-charcoal: #f0e9dc;
+  --color-charcoal-soft: #c4bbaa;
+  --color-line: #d6c9ae;
+  --color-line-soft: #8c8172;
+
+  --color-accent: #c4623a;
+  --color-accent-bright: #d9744a;
+  --color-accent-soft: #e09a76;
+  --color-accent-wash: rgba(196, 98, 58, 0.14);
+  --color-on-accent: #17120f;
+
+  --color-danger: #c0493c;
+
+  --font-ui: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "SF Mono", Consolas, monospace;
+
   --radius-sm: 3px;
-  --radius-md: 6px;
-  --shadow-panel: 0 2px 10px rgba(0, 0, 0, 0.45);
+  --radius-md: 5px;
+  --shadow-panel: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 .app-shell[data-theme="light"] {
-  --color-bg: #f2ead9;
-  --color-surface: #e9dfc7;
-  --color-surface-alt: #ddd0ae;
+  --color-bg: #efeae0;
+  --color-canvas: #faf7f0;
+  --color-surface: #f6f2ea;
+  --color-surface-alt: #e8e2d6;
+  --color-paper: #ffffff;
+  --color-hairline: #dad2c4;
+  --color-grid: #d6cdbd;
+
+  --color-charcoal: #24211c;
+  --color-charcoal-soft: #4a443b;
   --color-line: #3a352c;
-  --color-line-soft: #6b6152;
-  --color-charcoal: #2a2721;
-  --color-charcoal-soft: #4a453b;
-  --color-accent: #b3593a;
-  --color-accent-soft: #c98a6c;
-  --color-danger: #a13a2e;
-  --color-paper: #f7f1e3;
-  --color-canvas: #f7f1e3;
-  --color-grid: #d8c9a8;
-  --shadow-panel: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --color-line-soft: #7a7060;
+
+  --color-accent: #b0522f;
+  --color-accent-bright: #c25e37;
+  --color-accent-soft: #d08a66;
+  --color-accent-wash: rgba(176, 82, 47, 0.1);
+  --color-on-accent: #ffffff;
+
+  --color-danger: #a8392c;
+  --shadow-panel: 0 4px 16px rgba(60, 45, 30, 0.12);
 }
 
 * {
@@ -45,8 +62,17 @@ body {
   background: var(--color-bg);
   color: var(--color-charcoal);
   font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .mono {
   font-family: var(--font-mono);
+  /* Tabular figures keep measurements from jittering as they update. */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+svg text {
+  font-variant-numeric: tabular-nums;
 }

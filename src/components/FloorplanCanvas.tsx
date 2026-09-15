@@ -6,7 +6,7 @@ import type { Unit } from "../lib/units";
 import { formatLength } from "../lib/units";
 import { exportSvgAsPng } from "../lib/export";
 
-type Mode = "trace" | "calibrate" | "place" | "pan" | "comment";
+type Mode = "select" | "walls" | "scale" | "arrange" | "comment";
 
 interface FloorplanCanvasProps {
   roomName: string;
@@ -25,6 +25,9 @@ interface FloorplanCanvasProps {
   onAddComment: (point: Point) => void;
   selectedWallIndex: number | null;
   onSelectWall: (index: number | null) => void;
+  zoom: number;
+  onZoomChange: (updater: (zoom: number) => number) => void;
+  onCursorMove: (point: Point | null) => void;
 }
 
 export interface FloorplanCanvasHandle {
@@ -140,6 +143,9 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     onAddComment,
     selectedWallIndex,
     onSelectWall,
+    zoom,
+    onZoomChange,
+    onCursorMove,
   },
   ref,
 ) {
@@ -148,9 +154,9 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
   const [calibrationPoints, setCalibrationPoints] = useState<Point[]>([]);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<Point>({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(0.6);
-  const [cursorPos, setCursorPos] = useState<Point | null>(null);
   const panState = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
+  const didPan = useRef(false);
+  const [crosshair, setCrosshair] = useState<Point | null>(null);
   const [isPanning, setIsPanning] = useState(false);
 
   const segments = polygonPerimeterSegments(outline);
@@ -184,15 +190,14 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
   }
 
   function handleSvgClick(e: React.MouseEvent) {
-    if (mode === "pan") return;
     if (mode === "comment") {
       onAddComment(toSvgPoint(e));
       return;
     }
     const p = snapToGrid(toSvgPoint(e));
-    if (mode === "trace") {
+    if (mode === "walls") {
       onOutlineChange([...outline, p]);
-    } else if (mode === "calibrate") {
+    } else if (mode === "scale") {
       const next = [...calibrationPoints, p];
       if (next.length === 2) {
         const realLengthStr = window.prompt("Enter the real-world length of this segment (cm):", "100");
@@ -204,28 +209,31 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
       } else {
         setCalibrationPoints(next);
       }
-    } else {
+    } else if (!didPan.current) {
+      // A drag that panned the canvas shouldn't also clear the selection.
       onSelectFurniture(null);
       onSelectWall(null);
     }
   }
 
   function startDragFurniture(e: React.MouseEvent, item: Furniture) {
+    if (mode !== "arrange" && mode !== "select") return;
     e.stopPropagation();
-    if (mode !== "place") return;
     onSelectFurniture(item.id);
     onSelectWall(null);
+    if (mode !== "arrange") return;
     const p = toSvgPoint(e);
     setDragId(item.id);
     setDragOffset({ x: p.x - item.x, y: p.y - item.y });
   }
 
   function handleScrollMouseDown(e: React.MouseEvent) {
-    if (mode !== "pan" && e.button !== 1) return;
+    if (mode !== "select" && e.button !== 1) return;
     e.preventDefault();
     const container = scrollRef.current;
     if (!container) return;
     panState.current = { x: e.clientX, y: e.clientY, scrollLeft: container.scrollLeft, scrollTop: container.scrollTop };
+    didPan.current = false;
     setIsPanning(true);
   }
 
@@ -233,12 +241,14 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     if (panState.current && scrollRef.current) {
       const dx = e.clientX - panState.current.x;
       const dy = e.clientY - panState.current.y;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) didPan.current = true;
       scrollRef.current.scrollLeft = panState.current.scrollLeft - dx;
       scrollRef.current.scrollTop = panState.current.scrollTop - dy;
       return;
     }
     const p = toSvgPoint(e);
-    setCursorPos(p);
+    onCursorMove(p);
+    setCrosshair(mode === "walls" || mode === "scale" ? snapToGrid(p) : p);
     if (!dragId) return;
     onFurnitureChange(dragId, { x: p.x - dragOffset.x, y: p.y - dragOffset.y });
   }
@@ -256,18 +266,26 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     onFurnitureChange(selectedFurnitureId, { rotation: snapAngle(item.rotation + delta) });
   }
 
-  function handleWheel(e: React.WheelEvent) {
-    e.preventDefault();
-    setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z - e.deltaY * 0.001)));
+  function fitToView() {
+    const container = scrollRef.current;
+    if (!container) {
+      onZoomChange(() => 0.6);
+      return;
+    }
+    const fit = Math.min(container.clientWidth / VIEW_W, container.clientHeight / VIEW_H) * 0.94;
+    onZoomChange(() => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, fit)));
   }
 
-  const realWidthPx = scalePxPerUnit ? pxToReal(VIEW_W, scalePxPerUnit) : null;
+  function handleWheel(e: React.WheelEvent) {
+    e.preventDefault();
+    onZoomChange((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z - e.deltaY * 0.001)));
+  }
 
   return (
     <div className="floorplan-canvas">
       <div
         ref={scrollRef}
-        className={mode === "pan" ? "floorplan-canvas__scroll floorplan-canvas__scroll--pan" : "floorplan-canvas__scroll"}
+        className={mode === "select" ? "floorplan-canvas__scroll floorplan-canvas__scroll--pan" : "floorplan-canvas__scroll"}
         onWheel={handleWheel}
         onMouseDown={handleScrollMouseDown}
         onMouseMove={handleMouseMove}
@@ -281,7 +299,10 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
           className="floorplan-canvas__svg"
           style={{ width: VIEW_W * zoom, height: VIEW_H * zoom, cursor: mode === "comment" ? "crosshair" : undefined }}
           onClick={handleSvgClick}
-          onMouseLeave={() => setCursorPos(null)}
+          onMouseLeave={() => {
+            onCursorMove(null);
+            setCrosshair(null);
+          }}
         >
           <defs>
             <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
@@ -377,8 +398,8 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
                     strokeWidth="16"
                     strokeLinecap="round"
                     style={{
-                      cursor: mode === "place" ? "pointer" : undefined,
-                      pointerEvents: mode === "place" ? "stroke" : "none",
+                      cursor: mode === "select" ? "pointer" : undefined,
+                      pointerEvents: mode === "select" ? "stroke" : "none",
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -386,7 +407,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
                       onSelectWall(isSelectedWall ? null : i);
                     }}
                   >
-                    <title>{`Wall ${i + 1} — ${wallLabel}. Click to select, then open Side view.`}</title>
+                    <title>{`Wall ${i + 1} — ${wallLabel}. Click to select, then switch to Side view.`}</title>
                   </line>
                 </g>
               );
@@ -408,7 +429,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
                 className="floorplan-canvas__item-group"
                 transform={`translate(${item.x} ${item.y}) rotate(${item.rotation})`}
                 onMouseDown={(e) => startDragFurniture(e, item)}
-                style={{ cursor: mode === "place" ? "move" : "default" }}
+                style={{ cursor: mode === "arrange" ? "move" : mode === "select" ? "pointer" : "default" }}
                 filter="url(#dropShadow)"
               >
                 <title>{`${item.label} — ${formatLength(item.width, unit)} x ${formatLength(item.depth, unit)}`}</title>
@@ -442,6 +463,15 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
             );
           })}
 
+          {/* Precision crosshair — snaps to the grid in the tools where clicks snap. */}
+          {crosshair && (mode === "walls" || mode === "scale" || mode === "comment") && (
+            <g className="floorplan-canvas__crosshair" pointerEvents="none">
+              <line x1={crosshair.x} y1="0" x2={crosshair.x} y2={VIEW_H} />
+              <line x1="0" y1={crosshair.y} x2={VIEW_W} y2={crosshair.y} />
+              <circle cx={crosshair.x} cy={crosshair.y} r="3.5" />
+            </g>
+          )}
+
           {comments.map((c, i) => (
             <g
               key={c.id}
@@ -460,42 +490,26 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
         </svg>
       </div>
 
-      <div className="floorplan-canvas__hud mono">
-        <span>ZOOM {(zoom * 100).toFixed(0)}%</span>
-        {cursorPos && scalePxPerUnit ? (
-          <span>
-            X {formatLength(pxToReal(cursorPos.x, scalePxPerUnit), unit)} · Y {formatLength(pxToReal(cursorPos.y, scalePxPerUnit), unit)}
-          </span>
-        ) : (
-          <span>X — · Y —</span>
-        )}
-        {realWidthPx && <span>VIEW {formatLength(realWidthPx, unit)} WIDE</span>}
-        {selectedWallIndex !== null && wallRuns[selectedWallIndex] && (
-          <span className="floorplan-canvas__hud-selected">
-            WALL {selectedWallIndex + 1} SELECTED —{" "}
-            {scalePxPerUnit
-              ? formatLength(pxToReal(wallRuns[selectedWallIndex].length, scalePxPerUnit), unit)
-              : `${wallRuns[selectedWallIndex].length.toFixed(0)} px`}{" "}
-            · SWITCH TO SIDE VIEW
-          </span>
-        )}
-        {outline.length > 1 && (
-          <span>
-            PERIMETER {scalePxPerUnit ? formatLength(pxToReal(totalPerimeterPx, scalePxPerUnit), unit) : `${totalPerimeterPx.toFixed(0)} px`}
-          </span>
-        )}
+      <div className="canvas-dock canvas-dock--left">
+        <button className="canvas-dock__btn" onClick={() => onZoomChange((z) => Math.max(MIN_ZOOM, z - 0.15))} title="Zoom out">
+          −
+        </button>
+        <button className="canvas-dock__btn canvas-dock__btn--wide" onClick={fitToView} title="Fit the plan to the window">
+          Fit
+        </button>
+        <button className="canvas-dock__btn" onClick={() => onZoomChange((z) => Math.min(MAX_ZOOM, z + 0.15))} title="Zoom in">
+          +
+        </button>
       </div>
 
-      <div className="floorplan-canvas__zoom-controls">
-        <button className="floorplan-canvas__zoom-btn" onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z - 0.15))}>−</button>
-        <button className="floorplan-canvas__zoom-reset" onClick={() => setZoom(0.6)}>Reset</button>
-        <button className="floorplan-canvas__zoom-btn" onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z + 0.15))}>+</button>
-      </div>
-
-      {mode === "place" && selectedFurnitureId && (
-        <div className="floorplan-canvas__rotate-controls">
-          <button onClick={() => rotateSelected(-15)}>⟲ 15°</button>
-          <button onClick={() => rotateSelected(15)}>⟳ 15°</button>
+      {mode === "arrange" && selectedFurnitureId && (
+        <div className="canvas-dock canvas-dock--right">
+          <button className="canvas-dock__btn" onClick={() => rotateSelected(-15)} title="Rotate 15° anticlockwise">
+            ⟲
+          </button>
+          <button className="canvas-dock__btn" onClick={() => rotateSelected(15)} title="Rotate 15° clockwise">
+            ⟳
+          </button>
         </div>
       )}
     </div>

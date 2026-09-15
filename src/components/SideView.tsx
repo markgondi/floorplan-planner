@@ -15,11 +15,11 @@ interface SideViewProps {
   onSelectFurniture: (id: string | null) => void;
 }
 
-const VIEW_W = 1600;
-const VIEW_H = 700;
-const FLOOR_Y = 600;
 const PX_PER_CM = 2;
-const LEFT_MARGIN = 60;
+const LEFT_MARGIN = 70;
+const RIGHT_MARGIN = 70;
+const TOP_MARGIN = 70;
+const BELOW_FLOOR = 60;
 // Items further than this from the selected wall (perpendicular) are considered
 // to belong to another wall and are left out of that wall's elevation.
 const NEAR_WALL_CM = 150;
@@ -36,7 +36,6 @@ export default function SideView({
 }: SideViewProps) {
   const ceilingPx = ceilingHeightCm * PX_PER_CM;
   const scale = scalePxPerUnit || 1;
-  const selectedItem = furniture.find((f) => f.id === selectedFurnitureId) ?? null;
 
   // Resolve each item to a horizontal position (cm along the viewed wall) and whether
   // it belongs to this wall's elevation at all.
@@ -57,13 +56,25 @@ export default function SideView({
   // Walls drawn first so they sit behind furniture/doors/readers instead of covering them.
   const ordered = [...placed].sort((a, b) => (a.item.kind === "wall" ? -1 : 0) - (b.item.kind === "wall" ? -1 : 0));
 
+  // Size the drawing to its content so a short wall doesn't float in a mostly empty frame.
+  const spanCm = Math.max(
+    wallLengthCm ?? 0,
+    ...placed.map((p) => p.alongCm + p.item.width / 2),
+    200,
+  );
+  const tallestCm = Math.max(ceilingHeightCm, ...placed.map((p) => p.item.elevation + p.item.height), 100);
+  const VIEW_W = LEFT_MARGIN + spanCm * PX_PER_CM + RIGHT_MARGIN;
+  const VIEW_H = TOP_MARGIN + tallestCm * PX_PER_CM + BELOW_FLOOR;
+  const FLOOR_Y = VIEW_H - BELOW_FLOOR;
+  const ceilingPxClamped = Math.min(ceilingPx, tallestCm * PX_PER_CM);
+
   return (
     <div className="floorplan-canvas">
-      <div className="floorplan-canvas__scroll">
+      <div className="floorplan-canvas__scroll floorplan-canvas__scroll--fit">
         <svg
           viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-          className="floorplan-canvas__svg"
-          style={{ width: VIEW_W * 0.6, height: VIEW_H * 0.6 }}
+          className="floorplan-canvas__svg floorplan-canvas__svg--fit"
+          preserveAspectRatio="xMidYMid meet"
           onClick={() => onSelectFurniture(null)}
         >
           <defs>
@@ -116,14 +127,14 @@ export default function SideView({
           {/* Ceiling reference line at room's configured height */}
           <line
             x1="0"
-            y1={FLOOR_Y - ceilingPx}
+            y1={FLOOR_Y - ceilingPxClamped}
             x2={VIEW_W}
-            y2={FLOOR_Y - ceilingPx}
+            y2={FLOOR_Y - ceilingPxClamped}
             stroke="var(--color-line-soft)"
             strokeWidth="1"
             strokeDasharray="6 4"
           />
-          <text x="8" y={FLOOR_Y - ceilingPx - 6} className="mono floorplan-canvas__dim-label" fontSize="11">
+          <text x="8" y={FLOOR_Y - ceilingPxClamped - 6} className="mono floorplan-canvas__dim-label" fontSize="11">
             CEILING {formatLength(ceilingHeightCm, unit)}
           </text>
 
@@ -192,29 +203,16 @@ export default function SideView({
           })}
         </svg>
       </div>
-      <div className="floorplan-canvas__hud mono">
-        {selectedWall && wallLengthCm !== null ? (
-          <span className="floorplan-canvas__hud-selected">
-            VIEWING WALL {(selectedWallIndex ?? 0) + 1} — {formatLength(wallLengthCm, unit)}
-          </span>
-        ) : (
-          <span className="floorplan-canvas__hud-selected">NO WALL SELECTED — SHOWING ALL ITEMS</span>
-        )}
-        {!selectedWall && <span>IN TOP VIEW, USE "PLACE ITEMS" AND CLICK A WALL TO PICK ONE</span>}
-        {selectedWall && excludedCount > 0 && (
-          <span>
-            {excludedCount} ITEM{excludedCount === 1 ? "" : "S"} NOT NEAR THIS WALL (HIDDEN)
-          </span>
-        )}
-        {selectedItem ? (
-          <span className="floorplan-canvas__hud-selected">
-            SELECTED: {selectedItem.label} — {formatLength(selectedItem.width, unit)} W × {formatLength(selectedItem.height, unit)} H
-          </span>
-        ) : (
-          <span>CLICK AN ITEM TO SELECT IT</span>
-        )}
-        <span>DEPTH NOT SHOWN</span>
-      </div>
+      {selectedWall && excludedCount > 0 && (
+        <div className="canvas-dock canvas-dock--note mono">
+          {excludedCount} item{excludedCount === 1 ? "" : "s"} hidden — not near this wall
+        </div>
+      )}
+      {!selectedWall && (
+        <div className="canvas-dock canvas-dock--note mono">
+          No wall selected — showing everything. In Top view, use Place and click a wall.
+        </div>
+      )}
     </div>
   );
 }
