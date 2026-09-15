@@ -96,6 +96,12 @@
   overflow: hidden;
 }
 
+.draggable-panel--collapsed {
+  min-height: 0;
+  max-height: none;
+  resize: none;
+}
+
 .draggable-panel__header {
   display: flex;
   justify-content: space-between;

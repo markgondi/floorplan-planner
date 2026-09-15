@@ -55,8 +55,14 @@ export default function DraggablePanel({ title, children, defaultPosition, width
 
   return (
     <div
-      className="draggable-panel"
-      style={{ left: position.x, top: position.y, width, height, zIndex }}
+      className={collapsed ? "draggable-panel draggable-panel--collapsed" : "draggable-panel"}
+      style={{
+        left: position.x,
+        top: position.y,
+        width: collapsed ? undefined : width,
+        height: collapsed ? undefined : height,
+        zIndex,
+      }}
       onMouseDown={onFocus}
     >
       <div className="draggable-panel__header" onMouseDown={handleHeaderMouseDown}>
