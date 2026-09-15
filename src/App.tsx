@@ -10,7 +10,7 @@ import type { Room, Furniture, FurniturePreset } from "./lib/types";
 import { FURNITURE_PRESETS } from "./lib/types";
 import type { Unit } from "./lib/units";
 import { computeScale } from "./lib/geometry";
-import { createRoom as apiCreateRoom, listRooms, saveRoom } from "./lib/api";
+import { createRoom as apiCreateRoom, deleteRoom, listRooms, saveRoom } from "./lib/api";
 
 type Mode = "trace" | "calibrate" | "place" | "pan";
 
@@ -89,7 +89,15 @@ export default function App() {
     saveTimer.current = setTimeout(() => {
       const updated = rooms.find((r) => r.id === activeRoomId);
       const next = updated ? { ...updated, ...patch } : null;
-      if (next) saveRoom(next).catch(() => setSyncError("Failed to save changes to the server."));
+      if (!next) return;
+      saveRoom(next)
+        .then(() => setSyncError(null))
+        .catch(() =>
+          // one retry after a beat — serverless functions cold-starting is common and transient
+          saveRoom(next)
+            .then(() => setSyncError(null))
+            .catch(() => setSyncError("Failed to save changes to the server. Your edits are still here locally — try again in a moment.")),
+        );
     }, 500);
   }
 
@@ -117,6 +125,31 @@ export default function App() {
     } catch {
       setSyncError("Failed to save the room name to the server.");
     }
+  }
+
+  async function handleDeleteRoom(id: string) {
+    const room = rooms.find((r) => r.id === id);
+    if (!room) return;
+    if (!window.confirm(`Delete "${room.name}"? This removes its outline and all placed items — this can't be undone.`)) return;
+    const remaining = rooms.filter((r) => r.id !== id);
+    setRooms(remaining);
+    if (activeRoomId === id) setActiveRoomId(remaining[0]?.id ?? null);
+    try {
+      await deleteRoom(id);
+    } catch {
+      setSyncError("Failed to delete the room on the server.");
+    }
+  }
+
+  function handleUndoOutlinePoint() {
+    if (!activeRoom || activeRoom.outline.length === 0) return;
+    updateActiveRoom({ outline: activeRoom.outline.slice(0, -1) });
+  }
+
+  function handleClearOutline() {
+    if (!activeRoom || activeRoom.outline.length === 0) return;
+    if (!window.confirm("Clear the traced outline for this room?")) return;
+    updateActiveRoom({ outline: [] });
   }
 
   function handleCalibrate(pixelDistance: number, realLength: number) {
@@ -205,7 +238,14 @@ export default function App() {
   return (
     <div className="app-shell" data-theme={theme}>
       <Header theme={theme} onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))} />
-      {syncError && <div className="sync-banner">{syncError}</div>}
+      {syncError && (
+        <div className="sync-banner">
+          <span>{syncError}</span>
+          <button className="sync-banner__dismiss" onClick={() => setSyncError(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {activeRoom && (
         <div className="mode-bar">
@@ -222,6 +262,17 @@ export default function App() {
             <button className={mode === "pan" ? "active" : ""} onClick={() => setMode("pan")} title={MODE_HELP.pan}>
               Pan canvas
             </button>
+            {mode === "trace" && activeRoom.outline.length > 0 && (
+              <>
+                <span className="mode-bar__divider" />
+                <button onClick={handleUndoOutlinePoint} title="Remove the last traced point">
+                  Undo Point
+                </button>
+                <button onClick={handleClearOutline} title="Clear the whole traced outline">
+                  Clear Outline
+                </button>
+              </>
+            )}
           </div>
           <div className="mode-bar__right">
             <UnitsToggle unit={activeRoom.unit} onChange={handleUnitChange} />
@@ -267,14 +318,16 @@ export default function App() {
             onSelect={setActiveRoomId}
             onCreate={handleCreateRoom}
             onRename={handleRenameRoom}
+            onDelete={handleDeleteRoom}
           />
         </DraggablePanel>
 
         {activeRoom && (
           <DraggablePanel
             title="ITEMS"
-            defaultPosition={{ x: Math.max(220, window.innerWidth - 270), y: 16 }}
-            width={240}
+            defaultPosition={{ x: Math.max(220, window.innerWidth - 340), y: 16 }}
+            width={320}
+            height={520}
             zIndex={panelOrder.indexOf("items") + 10}
             onFocus={() => bringToFront("items")}
           >

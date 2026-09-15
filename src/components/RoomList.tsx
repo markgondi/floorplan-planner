@@ -6,9 +6,10 @@ interface RoomListProps {
   onSelect: (id: string) => void;
   onCreate: () => void;
   onRename: (id: string) => void;
+  onDelete: (id: string) => void;
 }
 
-export default function RoomList({ rooms, activeRoomId, onSelect, onCreate, onRename }: RoomListProps) {
+export default function RoomList({ rooms, activeRoomId, onSelect, onCreate, onRename, onDelete }: RoomListProps) {
   return (
     <nav className="room-list">
       <div className="room-list__header">
@@ -32,6 +33,16 @@ export default function RoomList({ rooms, activeRoomId, onSelect, onCreate, onRe
               }}
             >
               ✎
+            </button>
+            <button
+              className="room-list__delete"
+              title="Delete room"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(room.id);
+              }}
+            >
+              🗑
             </button>
           </li>
         ))}

@@ -84,5 +84,12 @@ export const handler: Handler = async (event) => {
     return json(200, room);
   }
 
-  return { statusCode: 405, headers: { Allow: "GET, POST, PUT" }, body: "Method Not Allowed" };
+  if (event.httpMethod === "DELETE") {
+    if (!id) return json(400, { error: "Missing id" });
+    await db.execute({ sql: "DELETE FROM furniture WHERE room_id = ?", args: [id] });
+    await db.execute({ sql: "DELETE FROM rooms WHERE id = ?", args: [id] });
+    return { statusCode: 204, body: "" };
+  }
+
+  return { statusCode: 405, headers: { Allow: "GET, POST, PUT, DELETE" }, body: "Method Not Allowed" };
 };

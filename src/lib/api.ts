@@ -33,3 +33,8 @@ export async function createRoom(name: string): Promise<Room> {
   if (!res.ok) throw new Error("Failed to create room");
   return res.json();
 }
+
+export async function deleteRoom(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/rooms?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete room");
+}

@@ -5,6 +5,7 @@ interface DraggablePanelProps {
   children: ReactNode;
   defaultPosition: { x: number; y: number };
   width?: number;
+  height?: number;
   zIndex: number;
   onFocus: () => void;
 }
@@ -19,7 +20,7 @@ function clamp(pos: { x: number; y: number }, width: number) {
   };
 }
 
-export default function DraggablePanel({ title, children, defaultPosition, width = 220, zIndex, onFocus }: DraggablePanelProps) {
+export default function DraggablePanel({ title, children, defaultPosition, width = 220, height, zIndex, onFocus }: DraggablePanelProps) {
   const [position, setPosition] = useState(() => clamp(defaultPosition, width));
   const [collapsed, setCollapsed] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
@@ -55,7 +56,7 @@ export default function DraggablePanel({ title, children, defaultPosition, width
   return (
     <div
       className="draggable-panel"
-      style={{ left: position.x, top: position.y, width, zIndex }}
+      style={{ left: position.x, top: position.y, width, height, zIndex }}
       onMouseDown={onFocus}
     >
       <div className="draggable-panel__header" onMouseDown={handleHeaderMouseDown}>
