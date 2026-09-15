@@ -27,10 +27,6 @@ export default function FurniturePanel({
 }: FurniturePanelProps) {
   return (
     <div className="furniture-panel">
-      <div className="furniture-panel__header">
-        <span className="mono">FURNITURE</span>
-      </div>
-
       <div className="furniture-panel__presets">
         {presets.map((preset) => (
           <button

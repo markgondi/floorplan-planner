@@ -11,8 +11,7 @@ export default function RoomList({ rooms, activeRoomId, onSelect, onCreate }: Ro
   return (
     <nav className="room-list">
       <div className="room-list__header">
-        <span className="mono">ROOMS</span>
-        <button onClick={onCreate}>+ New</button>
+        <button onClick={onCreate}>+ New Room</button>
       </div>
       <ul>
         {rooms.map((room) => (

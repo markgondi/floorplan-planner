@@ -6,6 +6,7 @@ import FurniturePanel from "./components/FurniturePanel";
 import FloorplanCanvas from "./components/FloorplanCanvas";
 import UnitsToggle from "./components/UnitsToggle";
 import PrintView from "./components/PrintView";
+import DraggablePanel from "./components/DraggablePanel";
 import type { Room, Furniture, FurniturePreset } from "./lib/types";
 import { FURNITURE_PRESETS } from "./lib/types";
 import type { Unit } from "./lib/units";
@@ -29,6 +30,7 @@ export default function App() {
   const [showPrint, setShowPrint] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [panelOrder, setPanelOrder] = useState<("rooms" | "furniture")[]>(["rooms", "furniture"]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didInit = useRef(false);
 
@@ -129,6 +131,10 @@ export default function App() {
     updateActiveRoom({ unit });
   }
 
+  function bringToFront(panel: "rooms" | "furniture") {
+    setPanelOrder((prev) => (prev[1] === panel ? prev : [prev[1], panel]));
+  }
+
   if (loading) {
     return (
       <div className="app-shell" data-theme={theme}>
@@ -142,67 +148,82 @@ export default function App() {
     <div className="app-shell" data-theme={theme}>
       <Header theme={theme} onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))} />
       {syncError && <div className="sync-banner">{syncError}</div>}
+
+      {activeRoom && (
+        <div className="mode-bar">
+          <div className="mode-bar__modes">
+            <button className={mode === "trace" ? "active" : ""} onClick={() => setMode("trace")} title={MODE_HELP.trace}>
+              Trace outline
+            </button>
+            <button className={mode === "calibrate" ? "active" : ""} onClick={() => setMode("calibrate")} title={MODE_HELP.calibrate}>
+              Calibrate scale
+            </button>
+            <button className={mode === "place" ? "active" : ""} onClick={() => setMode("place")} title={MODE_HELP.place}>
+              Place furniture
+            </button>
+            <span className="mode-bar__help mono" title={MODE_HELP[mode]}>?</span>
+          </div>
+          <div className="mode-bar__right">
+            <UnitsToggle unit={activeRoom.unit} onChange={handleUnitChange} />
+            <button onClick={() => setShowPrint((v) => !v)}>{showPrint ? "Back to editor" : "Print / Export"}</button>
+          </div>
+        </div>
+      )}
+      {activeRoom && <div className="mode-bar__status mono">{MODE_HELP[mode]}</div>}
+
       <div className="app-body">
-        <RoomList rooms={rooms} activeRoomId={activeRoomId} onSelect={setActiveRoomId} onCreate={handleCreateRoom} />
-
-        <main className="app-main">
-          {activeRoom ? (
-            <>
-              <div className="mode-bar">
-                <div className="mode-bar__modes">
-                  <button className={mode === "trace" ? "active" : ""} onClick={() => setMode("trace")} title={MODE_HELP.trace}>
-                    Trace outline
-                  </button>
-                  <button className={mode === "calibrate" ? "active" : ""} onClick={() => setMode("calibrate")} title={MODE_HELP.calibrate}>
-                    Calibrate scale
-                  </button>
-                  <button className={mode === "place" ? "active" : ""} onClick={() => setMode("place")} title={MODE_HELP.place}>
-                    Place furniture
-                  </button>
-                  <span className="mode-bar__help mono" title={MODE_HELP[mode]}>?</span>
-                </div>
-                <div className="mode-bar__right">
-                  <UnitsToggle unit={activeRoom.unit} onChange={handleUnitChange} />
-                  <button onClick={() => setShowPrint((v) => !v)}>{showPrint ? "Back to editor" : "Print / Export"}</button>
-                </div>
-              </div>
-              <div className="mode-bar__status mono">{MODE_HELP[mode]}</div>
-
-              {showPrint ? (
-                <PrintView room={activeRoom} />
-              ) : (
-                <FloorplanCanvas
-                  outline={activeRoom.outline}
-                  scalePxPerUnit={activeRoom.scalePxPerUnit}
-                  unit={activeRoom.unit}
-                  furniture={activeRoom.furniture}
-                  selectedFurnitureId={selectedFurnitureId}
-                  imageUrl={activeRoom.floorplanImageUrl}
-                  mode={mode}
-                  onOutlineChange={(outline) => updateActiveRoom({ outline })}
-                  onCalibrate={handleCalibrate}
-                  onFurnitureChange={handleUpdateFurniture}
-                  onSelectFurniture={setSelectedFurnitureId}
-                />
-              )}
-            </>
+        {activeRoom ? (
+          showPrint ? (
+            <PrintView room={activeRoom} />
           ) : (
-            <div className="app-main__empty">Create a room to get started.</div>
-          )}
-        </main>
+            <FloorplanCanvas
+              outline={activeRoom.outline}
+              scalePxPerUnit={activeRoom.scalePxPerUnit}
+              unit={activeRoom.unit}
+              furniture={activeRoom.furniture}
+              selectedFurnitureId={selectedFurnitureId}
+              imageUrl={activeRoom.floorplanImageUrl}
+              mode={mode}
+              onOutlineChange={(outline) => updateActiveRoom({ outline })}
+              onCalibrate={handleCalibrate}
+              onFurnitureChange={handleUpdateFurniture}
+              onSelectFurniture={setSelectedFurnitureId}
+            />
+          )
+        ) : (
+          <div className="app-main__empty">Create a room to get started.</div>
+        )}
+
+        <DraggablePanel
+          title="ROOMS"
+          defaultPosition={{ x: 16, y: 16 }}
+          width={190}
+          zIndex={panelOrder.indexOf("rooms") + 10}
+          onFocus={() => bringToFront("rooms")}
+        >
+          <RoomList rooms={rooms} activeRoomId={activeRoomId} onSelect={setActiveRoomId} onCreate={handleCreateRoom} />
+        </DraggablePanel>
 
         {activeRoom && !showPrint && (
-          <FurniturePanel
-            furniture={activeRoom.furniture}
-            unit={activeRoom.unit}
-            selectedId={selectedFurnitureId}
-            presets={FURNITURE_PRESETS}
-            onSelect={setSelectedFurnitureId}
-            onAddPreset={handleAddPreset}
-            onUpdate={handleUpdateFurniture}
-            onDelete={handleDeleteFurniture}
-            onDuplicate={handleDuplicateFurniture}
-          />
+          <DraggablePanel
+            title="FURNITURE"
+            defaultPosition={{ x: 900, y: 16 }}
+            width={230}
+            zIndex={panelOrder.indexOf("furniture") + 10}
+            onFocus={() => bringToFront("furniture")}
+          >
+            <FurniturePanel
+              furniture={activeRoom.furniture}
+              unit={activeRoom.unit}
+              selectedId={selectedFurnitureId}
+              presets={FURNITURE_PRESETS}
+              onSelect={setSelectedFurnitureId}
+              onAddPreset={handleAddPreset}
+              onUpdate={handleUpdateFurniture}
+              onDelete={handleDeleteFurniture}
+              onDuplicate={handleDuplicateFurniture}
+            />
+          </DraggablePanel>
         )}
       </div>
     </div>

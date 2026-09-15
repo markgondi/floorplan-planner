@@ -2,6 +2,7 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
+  position: relative;
 }
 
 .app-header {
@@ -23,23 +24,25 @@
 }
 
 .app-header__logo-slot {
-  width: 32px;
-  height: 32px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  border: 1px dashed var(--color-accent-soft);
+  height: 34px;
+  padding: 4px 10px;
+  background: #ffffff;
   border-radius: var(--radius-sm);
-  font-size: 9px;
-  letter-spacing: 0.05em;
-  color: var(--color-accent-soft);
-  overflow: hidden;
 }
 
 .app-header__logo-slot img {
-  width: 100%;
   height: 100%;
-  object-fit: contain;
+  width: auto;
+  display: block;
+}
+
+.app-header__divider {
+  width: 1px;
+  height: 22px;
+  background: var(--color-line-soft);
+  opacity: 0.6;
 }
 
 .app-header__title {
@@ -62,31 +65,70 @@
 
 .app-body {
   flex: 1;
-  display: grid;
-  grid-template-columns: 170px 1fr 220px;
+  position: relative;
   min-height: 0;
+  overflow: hidden;
 }
 
-.room-list, .furniture-panel {
+.draggable-panel {
+  position: absolute;
   background: var(--color-surface);
-  border-right: 1px solid var(--color-line-soft);
-  padding: 12px;
-  overflow-y: auto;
+  border: 1px solid var(--color-line-soft);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100% - 32px);
 }
 
-.furniture-panel {
-  border-right: none;
-  border-left: 1px solid var(--color-line-soft);
-}
-
-.room-list__header, .furniture-panel__header {
+.draggable-panel__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
-  font-size: 11px;
-  letter-spacing: 0.08em;
+  padding: 6px 10px;
+  background: var(--color-surface-alt);
+  border-bottom: 1px solid var(--color-line-soft);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  font-size: 10px;
+  letter-spacing: 0.1em;
   color: var(--color-line-soft);
+  cursor: grab;
+  user-select: none;
+}
+
+.draggable-panel__header:active {
+  cursor: grabbing;
+}
+
+.draggable-panel__collapse {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 10px;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid var(--color-line-soft);
+}
+
+.draggable-panel__body {
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.room-list, .furniture-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.room-list__header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+
+.room-list__header button {
+  width: 100%;
 }
 
 .room-list ul, .furniture-panel__list {
@@ -168,14 +210,12 @@
   font-size: 11px;
 }
 
-.app-main {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
 .app-main__empty {
-  margin: auto;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--color-line-soft);
 }
 
@@ -233,10 +273,9 @@
 }
 
 .floorplan-canvas {
-  flex: 1;
-  position: relative;
+  position: absolute;
+  inset: 0;
   display: flex;
-  min-height: 0;
   background: var(--color-bg);
 }
 
