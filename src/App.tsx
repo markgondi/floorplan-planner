@@ -1,122 +1,154 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useState } from "react";
+import "./App.css";
+import Header from "./components/Header";
+import RoomList from "./components/RoomList";
+import FurniturePanel from "./components/FurniturePanel";
+import FloorplanCanvas from "./components/FloorplanCanvas";
+import UnitsToggle from "./components/UnitsToggle";
+import PrintView from "./components/PrintView";
+import type { Room, Furniture } from "./lib/types";
+import type { Unit } from "./lib/units";
+import { computeScale } from "./lib/geometry";
 
-function App() {
-  const [count, setCount] = useState(0)
+type Mode = "trace" | "calibrate" | "place";
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+function emptyRoom(id: string, name: string): Room {
+  return { id, name, scalePxPerUnit: 0, unit: "cm", floorplanImageUrl: null, outline: [], furniture: [] };
 }
 
-export default App
+export default function App() {
+  const [rooms, setRooms] = useState<Room[]>([emptyRoom(crypto.randomUUID(), "Living Room")]);
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(rooms[0]?.id ?? null);
+  const [mode, setMode] = useState<Mode>("trace");
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [selectedFurnitureId, setSelectedFurnitureId] = useState<string | null>(null);
+  const [showPrint, setShowPrint] = useState(false);
+
+  const activeRoom = rooms.find((r) => r.id === activeRoomId) ?? null;
+
+  function updateActiveRoom(patch: Partial<Room>) {
+    if (!activeRoomId) return;
+    setRooms((prev) => prev.map((r) => (r.id === activeRoomId ? { ...r, ...patch } : r)));
+  }
+
+  function handleCreateRoom() {
+    const name = window.prompt("Room name:", "New Room");
+    if (!name) return;
+    const room = emptyRoom(crypto.randomUUID(), name);
+    setRooms((prev) => [...prev, room]);
+    setActiveRoomId(room.id);
+  }
+
+  function handleCalibrate(pixelDistance: number, realLength: number) {
+    updateActiveRoom({ scalePxPerUnit: computeScale(pixelDistance, realLength) });
+  }
+
+  function handleAddFurniture() {
+    if (!activeRoom) return;
+    const item: Furniture = {
+      id: crypto.randomUUID(),
+      roomId: activeRoom.id,
+      label: "New Item",
+      shape: "rect",
+      width: 80,
+      depth: 40,
+      x: 450,
+      y: 300,
+      rotation: 0,
+      color: "#b3593a",
+    };
+    updateActiveRoom({ furniture: [...activeRoom.furniture, item] });
+    setSelectedFurnitureId(item.id);
+  }
+
+  function handleUpdateFurniture(id: string, patch: Partial<Furniture>) {
+    if (!activeRoom) return;
+    updateActiveRoom({
+      furniture: activeRoom.furniture.map((f) => (f.id === id ? { ...f, ...patch } : f)),
+    });
+  }
+
+  function handleDeleteFurniture(id: string) {
+    if (!activeRoom) return;
+    updateActiveRoom({ furniture: activeRoom.furniture.filter((f) => f.id !== id) });
+    if (selectedFurnitureId === id) setSelectedFurnitureId(null);
+  }
+
+  function handleDuplicateFurniture(id: string) {
+    if (!activeRoom) return;
+    const source = activeRoom.furniture.find((f) => f.id === id);
+    if (!source) return;
+    const copy: Furniture = { ...source, id: crypto.randomUUID(), x: source.x + 20, y: source.y + 20 };
+    updateActiveRoom({ furniture: [...activeRoom.furniture, copy] });
+  }
+
+  function handleUnitChange(unit: Unit) {
+    updateActiveRoom({ unit });
+  }
+
+  return (
+    <div className="app-shell" data-theme={theme}>
+      <Header theme={theme} onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))} />
+      <div className="app-body">
+        <RoomList rooms={rooms} activeRoomId={activeRoomId} onSelect={setActiveRoomId} onCreate={handleCreateRoom} />
+
+        <main className="app-main">
+          {activeRoom ? (
+            <>
+              <div className="mode-bar">
+                <div className="mode-bar__modes">
+                  <button className={mode === "trace" ? "active" : ""} onClick={() => setMode("trace")}>
+                    Trace outline
+                  </button>
+                  <button className={mode === "calibrate" ? "active" : ""} onClick={() => setMode("calibrate")}>
+                    Calibrate scale
+                  </button>
+                  <button className={mode === "place" ? "active" : ""} onClick={() => setMode("place")}>
+                    Place furniture
+                  </button>
+                </div>
+                <div className="mode-bar__right">
+                  <UnitsToggle unit={activeRoom.unit} onChange={handleUnitChange} />
+                  <button onClick={() => setShowPrint((v) => !v)}>{showPrint ? "Back to editor" : "Print / Export"}</button>
+                </div>
+              </div>
+
+              {showPrint ? (
+                <PrintView room={activeRoom} />
+              ) : (
+                <FloorplanCanvas
+                  outline={activeRoom.outline}
+                  scalePxPerUnit={activeRoom.scalePxPerUnit}
+                  unit={activeRoom.unit}
+                  furniture={activeRoom.furniture}
+                  selectedFurnitureId={selectedFurnitureId}
+                  imageUrl={activeRoom.floorplanImageUrl}
+                  mode={mode}
+                  onOutlineChange={(outline) => updateActiveRoom({ outline })}
+                  onCalibrate={handleCalibrate}
+                  onFurnitureChange={handleUpdateFurniture}
+                  onSelectFurniture={setSelectedFurnitureId}
+                />
+              )}
+            </>
+          ) : (
+            <div className="app-main__empty">Create a room to get started.</div>
+          )}
+        </main>
+
+        {activeRoom && !showPrint && (
+          <FurniturePanel
+            furniture={activeRoom.furniture}
+            unit={activeRoom.unit}
+            selectedId={selectedFurnitureId}
+            onSelect={setSelectedFurnitureId}
+            onAdd={handleAddFurniture}
+            onUpdate={handleUpdateFurniture}
+            onDelete={handleDeleteFurniture}
+            onDuplicate={handleDuplicateFurniture}
+          />
+        )}
+      </div>
+    </div>
+  );
+}

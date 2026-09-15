@@ -1,0 +1,46 @@
+:root {
+  --color-bg: #f2ead9;
+  --color-surface: #e9dfc7;
+  --color-surface-alt: #ddd0ae;
+  --color-line: #3a352c;
+  --color-line-soft: #6b6152;
+  --color-charcoal: #2a2721;
+  --color-charcoal-soft: #4a453b;
+  --color-accent: #b3593a;
+  --color-accent-soft: #c98a6c;
+  --color-danger: #a13a2e;
+  --color-paper: #f7f1e3;
+  --font-ui: "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "Consolas", monospace;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+}
+
+[data-theme="dark"] {
+  --color-bg: #201d18;
+  --color-surface: #2b2721;
+  --color-surface-alt: #35302a;
+  --color-line: #e9dfc7;
+  --color-line-soft: #b7ab90;
+  --color-charcoal: #f2ead9;
+  --color-charcoal-soft: #ddd0ae;
+  --color-accent: #d97b52;
+  --color-accent-soft: #e6a483;
+  --color-danger: #e0655a;
+  --color-paper: #26221c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-charcoal);
+  font-family: var(--font-ui);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
