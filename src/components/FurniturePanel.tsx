@@ -1,6 +1,6 @@
 import type { Furniture, FurniturePreset } from "../lib/types";
 import type { Unit } from "../lib/units";
-import { formatLength, fromCm, toCm } from "../lib/units";
+import { fromCm, toCm } from "../lib/units";
 
 interface FurniturePanelProps {
   furniture: Furniture[];
@@ -40,7 +40,7 @@ export default function FurniturePanel({
             />
             <div className="furniture-panel__preset-dims mono">
               <label>
-                W
+                <span>W</span>
                 <input
                   type="number"
                   value={fromCm(preset.width, unit).toFixed(1)}
@@ -48,21 +48,21 @@ export default function FurniturePanel({
                 />
               </label>
               <label>
-                D
+                <span>D</span>
                 <input
                   type="number"
                   value={fromCm(preset.depth, unit).toFixed(1)}
                   onChange={(e) => onUpdatePreset(preset.id, { depth: toCm(Number(e.target.value), unit) })}
                 />
               </label>
-              <button
-                className="furniture-panel__preset-add"
-                title={`Add ${preset.label} to the canvas`}
-                onClick={() => onAddPreset(preset)}
-              >
-                + Add
-              </button>
             </div>
+            <button
+              className="furniture-panel__preset-add"
+              title={`Add ${preset.label} to the canvas`}
+              onClick={() => onAddPreset(preset)}
+            >
+              + Add {preset.label}
+            </button>
           </div>
         ))}
       </div>
@@ -82,24 +82,25 @@ export default function FurniturePanel({
             />
             <div className="furniture-panel__dims mono">
               <label>
-                W
+                <span>W</span>
                 <input
                   type="number"
                   value={fromCm(item.width, unit).toFixed(1)}
                   onChange={(e) => onUpdate(item.id, { width: toCm(Number(e.target.value), unit) })}
                   onClick={(e) => e.stopPropagation()}
                 />
+                <span className="furniture-panel__unit">{unit}</span>
               </label>
               <label>
-                D
+                <span>D</span>
                 <input
                   type="number"
                   value={fromCm(item.depth, unit).toFixed(1)}
                   onChange={(e) => onUpdate(item.id, { depth: toCm(Number(e.target.value), unit) })}
                   onClick={(e) => e.stopPropagation()}
                 />
+                <span className="furniture-panel__unit">{unit}</span>
               </label>
-              <span>{formatLength(item.width, unit)} x {formatLength(item.depth, unit)}</span>
             </div>
             <div className="furniture-panel__actions">
               <button onClick={(e) => { e.stopPropagation(); onDuplicate(item.id); }}>Duplicate</button>
