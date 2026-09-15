@@ -5,20 +5,25 @@ import RoomList from "./components/RoomList";
 import FurniturePanel from "./components/FurniturePanel";
 import CommentsPanel from "./components/CommentsPanel";
 import FloorplanCanvas, { type FloorplanCanvasHandle } from "./components/FloorplanCanvas";
+import SideView from "./components/SideView";
 import UnitsToggle from "./components/UnitsToggle";
 import DraggablePanel from "./components/DraggablePanel";
-import type { Comment, Room, Furniture, FurniturePreset } from "./lib/types";
+import type { Comment, Folder, Room, Furniture, FurniturePreset } from "./lib/types";
 import { FURNITURE_PRESETS } from "./lib/types";
 import type { Point } from "./lib/geometry";
 import type { Unit } from "./lib/units";
 import { computeScale } from "./lib/geometry";
 import {
   createComment,
+  createFolder,
   createRoom as apiCreateRoom,
   deleteComment,
+  deleteFolder,
   deleteRoom,
   listComments,
+  listFolders,
   listRooms,
+  renameFolder,
   saveRoom,
   setCommentResolved,
 } from "./lib/api";
@@ -39,7 +44,23 @@ const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 function loadPresets(): FurniturePreset[] {
   try {
     const saved = localStorage.getItem(PRESETS_STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const parsed = JSON.parse(saved) as Partial<FurniturePreset>[];
+      // Backfill fields added after a preset was cached (e.g. height/elevation) so stale
+      // localStorage doesn't produce blank/NaN inputs, and append any preset kinds shipped
+      // after this browser last cached the list (e.g. Wall/Door/Access Reader).
+      const merged = parsed
+        .filter((p) => p.id)
+        .map((p) => {
+          const fallback = FURNITURE_PRESETS.find((d) => d.id === p.id) ?? FURNITURE_PRESETS[FURNITURE_PRESETS.length - 1];
+          return { ...fallback, ...p } as FurniturePreset;
+        });
+      const knownIds = new Set(merged.map((p) => p.id));
+      for (const preset of FURNITURE_PRESETS) {
+        if (!knownIds.has(preset.id)) merged.push(preset);
+      }
+      return merged;
+    }
   } catch {
     // ignore malformed local storage
   }
@@ -48,8 +69,10 @@ function loadPresets(): FurniturePreset[] {
 
 export default function App() {
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("trace");
+  const [view, setView] = useState<"top" | "side">("top");
   const [theme, setTheme] = useState<"light" | "dark">("dark");
   const [selectedFurnitureId, setSelectedFurnitureId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -67,7 +90,8 @@ export default function App() {
     didInit.current = true;
     (async () => {
       try {
-        const loaded = await listRooms();
+        const [loaded, loadedFolders] = await Promise.all([listRooms(), listFolders().catch(() => [])]);
+        setFolders(loadedFolders);
         if (loaded.length > 0) {
           setRooms(loaded);
           setActiveRoomId(loaded[0].id);
@@ -124,15 +148,64 @@ export default function App() {
     }, 500);
   }
 
-  async function handleCreateRoom() {
+  async function handleCreateRoom(folderId?: string | null) {
     const name = window.prompt("Room name:", "New Room");
     if (!name) return;
     try {
-      const room = await apiCreateRoom(name);
+      const room = await apiCreateRoom(name, folderId ?? null);
       setRooms((prev) => [...prev, room]);
       setActiveRoomId(room.id);
     } catch {
       setSyncError("Failed to create room on the server.");
+    }
+  }
+
+  async function handleMoveRoomToFolder(roomId: string, folderId: string | null) {
+    const room = rooms.find((r) => r.id === roomId);
+    if (!room) return;
+    const next = { ...room, folderId };
+    setRooms((prev) => prev.map((r) => (r.id === roomId ? next : r)));
+    try {
+      await saveRoom(next);
+    } catch {
+      setSyncError("Failed to move the room on the server.");
+    }
+  }
+
+  async function handleCreateFolder() {
+    const name = window.prompt("Folder name:", "New Folder");
+    if (!name) return;
+    try {
+      const folder = await createFolder(name);
+      setFolders((prev) => [...prev, folder]);
+    } catch {
+      setSyncError("Failed to create folder on the server.");
+    }
+  }
+
+  async function handleRenameFolder(id: string) {
+    const folder = folders.find((f) => f.id === id);
+    if (!folder) return;
+    const name = window.prompt("Rename folder:", folder.name);
+    if (!name || name === folder.name) return;
+    setFolders((prev) => prev.map((f) => (f.id === id ? { ...f, name } : f)));
+    try {
+      await renameFolder(id, name);
+    } catch {
+      setSyncError("Failed to rename folder on the server.");
+    }
+  }
+
+  async function handleDeleteFolder(id: string) {
+    const folder = folders.find((f) => f.id === id);
+    if (!folder) return;
+    if (!window.confirm(`Delete folder "${folder.name}"? Its rooms will move to Ungrouped, not be deleted.`)) return;
+    setFolders((prev) => prev.filter((f) => f.id !== id));
+    setRooms((prev) => prev.map((r) => (r.folderId === id ? { ...r, folderId: null } : r)));
+    try {
+      await deleteFolder(id);
+    } catch {
+      setSyncError("Failed to delete folder on the server.");
     }
   }
 
@@ -195,6 +268,8 @@ export default function App() {
       kind: preset.kind,
       width: preset.width,
       depth: preset.depth,
+      height: preset.height,
+      elevation: preset.elevation,
       x: 800 + offset,
       y: 550 + offset,
       rotation: 0,
@@ -271,6 +346,12 @@ export default function App() {
     fileInputRef.current?.click();
   }
 
+  function handleRemoveFloorplanImage() {
+    if (!activeRoom?.floorplanImageUrl) return;
+    if (!window.confirm("Remove the uploaded floorplan image? The traced outline and items stay.")) return;
+    updateActiveRoom({ floorplanImageUrl: null });
+  }
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -344,10 +425,25 @@ export default function App() {
             )}
           </div>
           <div className="mode-bar__right">
+            <div className="units-toggle mono">
+              <button className={view === "top" ? "active" : ""} onClick={() => setView("top")} title="Top-down plan view">
+                Top
+              </button>
+              <button className={view === "side" ? "active" : ""} onClick={() => setView("side")} title="Side elevation view — items projected along one wall">
+                Side
+              </button>
+            </div>
             <UnitsToggle unit={activeRoom.unit} onChange={handleUnitChange} />
             <button onClick={handleUploadClick}>Upload Floorplan</button>
+            {activeRoom.floorplanImageUrl && (
+              <button onClick={handleRemoveFloorplanImage} title="Remove the uploaded floorplan image">
+                Remove Floorplan
+              </button>
+            )}
             <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleFileChange} />
-            <button onClick={() => canvasRef.current?.exportPng()}>Export PNG</button>
+            <button onClick={() => canvasRef.current?.exportPng()} disabled={view === "side"} title={view === "side" ? "Switch to Top view to export" : undefined}>
+              Export PNG
+            </button>
           </div>
         </div>
       )}
@@ -355,23 +451,34 @@ export default function App() {
 
       <div className="app-body">
         {activeRoom ? (
-          <FloorplanCanvas
-            ref={canvasRef}
-            roomName={activeRoom.name}
-            outline={activeRoom.outline}
-            scalePxPerUnit={activeRoom.scalePxPerUnit}
-            unit={activeRoom.unit}
-            furniture={activeRoom.furniture}
-            comments={comments}
-            selectedFurnitureId={selectedFurnitureId}
-            imageUrl={activeRoom.floorplanImageUrl}
-            mode={mode}
-            onOutlineChange={(outline) => updateActiveRoom({ outline })}
-            onCalibrate={handleCalibrate}
-            onFurnitureChange={handleUpdateFurniture}
-            onSelectFurniture={setSelectedFurnitureId}
-            onAddComment={handleAddComment}
-          />
+          view === "top" ? (
+            <FloorplanCanvas
+              ref={canvasRef}
+              roomName={activeRoom.name}
+              outline={activeRoom.outline}
+              scalePxPerUnit={activeRoom.scalePxPerUnit}
+              unit={activeRoom.unit}
+              furniture={activeRoom.furniture}
+              comments={comments}
+              selectedFurnitureId={selectedFurnitureId}
+              imageUrl={activeRoom.floorplanImageUrl}
+              mode={mode}
+              onOutlineChange={(outline) => updateActiveRoom({ outline })}
+              onCalibrate={handleCalibrate}
+              onFurnitureChange={handleUpdateFurniture}
+              onSelectFurniture={setSelectedFurnitureId}
+              onAddComment={handleAddComment}
+            />
+          ) : (
+            <SideView
+              furniture={activeRoom.furniture}
+              scalePxPerUnit={activeRoom.scalePxPerUnit}
+              unit={activeRoom.unit}
+              ceilingHeightCm={Math.max(240, ...activeRoom.furniture.filter((f) => f.kind === "wall").map((f) => f.height), 0)}
+              selectedFurnitureId={selectedFurnitureId}
+              onSelectFurniture={setSelectedFurnitureId}
+            />
+          )
         ) : (
           <div className="app-main__empty">Create a room to get started.</div>
         )}
@@ -379,17 +486,23 @@ export default function App() {
         <DraggablePanel
           title="ROOMS"
           defaultPosition={{ x: 16, y: 16 }}
-          width={190}
+          width={260}
+          height={340}
           zIndex={panelOrder.indexOf("rooms") + 10}
           onFocus={() => bringToFront("rooms")}
         >
           <RoomList
             rooms={rooms}
+            folders={folders}
             activeRoomId={activeRoomId}
             onSelect={setActiveRoomId}
             onCreate={handleCreateRoom}
             onRename={handleRenameRoom}
             onDelete={handleDeleteRoom}
+            onMoveToFolder={handleMoveRoomToFolder}
+            onCreateFolder={handleCreateFolder}
+            onRenameFolder={handleRenameFolder}
+            onDeleteFolder={handleDeleteFolder}
           />
         </DraggablePanel>
 

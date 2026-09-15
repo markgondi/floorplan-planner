@@ -1,4 +1,4 @@
-import type { Comment, Room } from "./types";
+import type { Comment, Folder, Room } from "./types";
 
 const BASE = "/api";
 
@@ -24,11 +24,11 @@ export async function saveRoom(room: Room): Promise<Room> {
   return res.json();
 }
 
-export async function createRoom(name: string): Promise<Room> {
+export async function createRoom(name: string, folderId?: string | null): Promise<Room> {
   const res = await fetch(`${BASE}/rooms`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, folderId }),
   });
   if (!res.ok) throw new Error("Failed to create room");
   return res.json();
@@ -37,6 +37,36 @@ export async function createRoom(name: string): Promise<Room> {
 export async function deleteRoom(id: string): Promise<void> {
   const res = await fetch(`${BASE}/rooms?id=${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete room");
+}
+
+export async function listFolders(): Promise<Folder[]> {
+  const res = await fetch(`${BASE}/folders`);
+  if (!res.ok) throw new Error("Failed to load folders");
+  return res.json();
+}
+
+export async function createFolder(name: string): Promise<Folder> {
+  const res = await fetch(`${BASE}/folders`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error("Failed to create folder");
+  return res.json();
+}
+
+export async function renameFolder(id: string, name: string): Promise<void> {
+  const res = await fetch(`${BASE}/folders?id=${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error("Failed to rename folder");
+}
+
+export async function deleteFolder(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/folders?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete folder");
 }
 
 export async function listComments(roomId: string): Promise<Comment[]> {

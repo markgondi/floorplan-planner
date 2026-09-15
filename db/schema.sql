@@ -1,6 +1,13 @@
+CREATE TABLE IF NOT EXISTS folders (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS rooms (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL,
   scale_px_per_unit REAL,
   unit TEXT DEFAULT 'cm',
   floorplan_image_url TEXT,
@@ -17,6 +24,8 @@ CREATE TABLE IF NOT EXISTS furniture (
   kind TEXT NOT NULL DEFAULT 'generic',
   width REAL NOT NULL,
   depth REAL NOT NULL,
+  height REAL NOT NULL DEFAULT 60,
+  elevation REAL NOT NULL DEFAULT 0,
   x REAL NOT NULL DEFAULT 0,
   y REAL NOT NULL DEFAULT 0,
   rotation REAL NOT NULL DEFAULT 0,

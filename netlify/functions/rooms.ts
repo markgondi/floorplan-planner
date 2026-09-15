@@ -10,6 +10,7 @@ function rowToRoom(row: any, furnitureRows: any[]) {
   return {
     id: row.id,
     name: row.name,
+    folderId: row.folder_id ?? null,
     scalePxPerUnit: row.scale_px_per_unit,
     unit: row.unit,
     floorplanImageUrl: row.floorplan_image_url,
@@ -22,6 +23,8 @@ function rowToRoom(row: any, furnitureRows: any[]) {
       kind: f.kind ?? "generic",
       width: f.width,
       depth: f.depth,
+      height: f.height ?? 60,
+      elevation: f.elevation ?? 0,
       x: f.x,
       y: f.y,
       rotation: f.rotation,
@@ -56,13 +59,13 @@ export const handler: Handler = async (event) => {
   }
 
   if (event.httpMethod === "POST") {
-    const { name } = JSON.parse(event.body ?? "{}");
+    const { name, folderId } = JSON.parse(event.body ?? "{}");
     const newId = crypto.randomUUID();
-    await db.execute({ sql: "INSERT INTO rooms (id, name) VALUES (?, ?)", args: [newId, name] });
+    await db.execute({ sql: "INSERT INTO rooms (id, name, folder_id) VALUES (?, ?, ?)", args: [newId, name, folderId ?? null] });
     return json(
       201,
       rowToRoom(
-        { id: newId, name, scale_px_per_unit: null, unit: "cm", floorplan_image_url: null, outline_json: null },
+        { id: newId, name, folder_id: folderId ?? null, scale_px_per_unit: null, unit: "cm", floorplan_image_url: null, outline_json: null },
         [],
       ),
     );
@@ -71,14 +74,28 @@ export const handler: Handler = async (event) => {
   if (event.httpMethod === "PUT") {
     const room = JSON.parse(event.body ?? "{}");
     await db.execute({
-      sql: `UPDATE rooms SET name = ?, scale_px_per_unit = ?, unit = ?, floorplan_image_url = ?, outline_json = ?, updated_at = datetime('now') WHERE id = ?`,
-      args: [room.name, room.scalePxPerUnit, room.unit, room.floorplanImageUrl, JSON.stringify(room.outline), room.id],
+      sql: `UPDATE rooms SET name = ?, folder_id = ?, scale_px_per_unit = ?, unit = ?, floorplan_image_url = ?, outline_json = ?, updated_at = datetime('now') WHERE id = ?`,
+      args: [room.name, room.folderId ?? null, room.scalePxPerUnit, room.unit, room.floorplanImageUrl, JSON.stringify(room.outline), room.id],
     });
     await db.execute({ sql: "DELETE FROM furniture WHERE room_id = ?", args: [room.id] });
     for (const f of room.furniture) {
       await db.execute({
-        sql: `INSERT INTO furniture (id, room_id, label, shape, kind, width, depth, x, y, rotation, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [f.id, room.id, f.label, f.shape, f.kind ?? "generic", f.width, f.depth, f.x, f.y, f.rotation, f.color],
+        sql: `INSERT INTO furniture (id, room_id, label, shape, kind, width, depth, height, elevation, x, y, rotation, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          f.id,
+          room.id,
+          f.label,
+          f.shape,
+          f.kind ?? "generic",
+          f.width,
+          f.depth,
+          f.height ?? 60,
+          f.elevation ?? 0,
+          f.x,
+          f.y,
+          f.rotation,
+          f.color,
+        ],
       });
     }
     return json(200, room);

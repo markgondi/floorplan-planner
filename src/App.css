@@ -80,6 +80,17 @@
   overflow: hidden;
 }
 
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .draggable-panel {
   position: absolute;
   background: var(--color-surface);
@@ -94,6 +105,7 @@
   max-width: min(90vw, 640px);
   resize: both;
   overflow: hidden;
+  animation: panel-in 0.2s ease-out;
 }
 
 .draggable-panel--collapsed {
@@ -144,17 +156,17 @@
 
 .room-list__header {
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 8px;
+  gap: 4px;
+  margin-bottom: 10px;
 }
 
 .room-list__header button {
-  width: 100%;
+  flex: 1;
 }
 
 .room-list ul, .furniture-panel__list {
   list-style: none;
-  margin: 0;
+  margin: 0 0 10px 0;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -165,10 +177,12 @@
   display: flex;
   gap: 4px;
   align-items: stretch;
+  flex-wrap: wrap;
 }
 
 .room-list__item {
   flex: 1;
+  min-width: 60px;
   width: auto;
   text-align: left;
   background: transparent;
@@ -178,6 +192,12 @@
 .room-list__item--active {
   border-color: var(--color-accent);
   background: var(--color-surface-alt);
+}
+
+.room-list__folder-select {
+  font-size: 10px;
+  max-width: 80px;
+  padding: 2px 4px;
 }
 
 .room-list__rename, .room-list__delete {
@@ -197,6 +217,37 @@
   padding: 4px 0;
 }
 
+.room-list__folder {
+  margin-bottom: 10px;
+}
+
+.room-list__folder-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--color-line-soft);
+  margin-bottom: 6px;
+}
+
+.room-list__folder-header--plain {
+  letter-spacing: 0.1em;
+  font-size: 10px;
+  margin-top: 4px;
+}
+
+.room-list__folder-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.room-list__folder-actions button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font-size: 10px;
+}
+
 .furniture-panel__section-label {
   font-size: 10px;
   letter-spacing: 0.1em;
@@ -204,13 +255,27 @@
   margin-top: 4px;
 }
 
+.furniture-panel__tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.furniture-panel__tabs button {
+  flex: 1;
+  border-radius: var(--radius-sm);
+}
+
+.furniture-panel__tabs button.active {
+  background: var(--color-accent);
+  color: var(--color-paper);
+  border-color: var(--color-accent);
+}
+
 .furniture-panel__presets {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--color-line-soft);
 }
 
 .furniture-panel__preset {
@@ -271,6 +336,11 @@
   gap: 6px;
   cursor: pointer;
   background: var(--color-paper);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.furniture-panel__item:hover {
+  border-color: var(--color-accent-soft);
 }
 
 .furniture-panel__item--active {
@@ -394,6 +464,23 @@
   border: 1px solid var(--color-line-soft);
   margin: auto;
   flex-shrink: 0;
+  transition: width 0.15s ease, height 0.15s ease;
+}
+
+.floorplan-canvas__item-group {
+  transition: filter 0.12s ease;
+}
+
+.floorplan-canvas__item-group:hover {
+  filter: brightness(1.18);
+}
+
+.floorplan-canvas__comment-pin circle {
+  transition: r 0.12s ease, filter 0.12s ease;
+}
+
+.floorplan-canvas__comment-pin:hover circle {
+  filter: brightness(1.2);
 }
 
 .floorplan-canvas__dim-label {

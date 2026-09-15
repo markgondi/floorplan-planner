@@ -3,6 +3,10 @@ html, body, #root {
   margin: 0;
 }
 
+* {
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
 button {
   font-family: var(--font-ui);
   background: var(--color-surface);
@@ -11,10 +15,25 @@ button {
   border-radius: var(--radius-sm);
   padding: 4px 10px;
   cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
 }
 
 button:hover {
   background: var(--color-surface-alt);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+button:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 button.active,
@@ -29,6 +48,13 @@ input {
   border: 1px solid var(--color-line-soft);
   border-radius: var(--radius-sm);
   padding: 4px 6px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 25%, transparent);
 }
 
 input[type="number"] {
@@ -39,6 +65,20 @@ input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
+}
+
+select {
+  font-family: var(--font-ui);
+  background: var(--color-paper);
+  color: var(--color-charcoal);
+  border: 1px solid var(--color-line-soft);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s ease;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-paper);
 }
 
 @media print {

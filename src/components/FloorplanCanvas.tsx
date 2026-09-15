@@ -1,6 +1,6 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import type { Point } from "../lib/geometry";
-import { distance, polygonPerimeterSegments, pxToReal, snapAngle } from "../lib/geometry";
+import { distance, mergeCollinearWalls, polygonPerimeterSegments, pxToReal, snapAngle } from "../lib/geometry";
 import type { Comment, Furniture } from "../lib/types";
 import type { Unit } from "../lib/units";
 import { formatLength } from "../lib/units";
@@ -151,6 +151,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
 
   const segments = polygonPerimeterSegments(outline);
   const totalPerimeterPx = segments.reduce((sum, seg) => sum + seg.length, 0);
+  const wallRuns = mergeCollinearWalls(outline);
 
   useImperativeHandle(ref, () => ({
     exportPng: () => {
@@ -324,12 +325,19 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
           )}
 
           {outline.length > 1 &&
-            segments.map((seg, i) => {
-              const mid = { x: (seg.from.x + seg.to.x) / 2, y: (seg.from.y + seg.to.y) / 2 };
-              const realLength = scalePxPerUnit ? pxToReal(seg.length, scalePxPerUnit) : seg.length;
+            wallRuns.map((run, i) => {
+              const dx = run.to.x - run.from.x;
+              const dy = run.to.y - run.from.y;
+              const len = Math.hypot(dx, dy) || 1;
+              const nx = -dy / len;
+              const ny = dx / len;
+              const offset = 16;
+              const midX = (run.from.x + run.to.x) / 2 + nx * offset;
+              const midY = (run.from.y + run.to.y) / 2 + ny * offset;
+              const realLength = scalePxPerUnit ? pxToReal(run.length, scalePxPerUnit) : run.length;
               return (
-                <text key={i} x={mid.x} y={mid.y - 6} className="mono floorplan-canvas__dim-label" textAnchor="middle">
-                  {scalePxPerUnit ? formatLength(realLength, unit) : `${seg.length.toFixed(0)} px`}
+                <text key={i} x={midX} y={midY} className="mono floorplan-canvas__dim-label" textAnchor="middle">
+                  {scalePxPerUnit ? formatLength(realLength, unit) : `${run.length.toFixed(0)} px`}
                 </text>
               );
             })}
@@ -347,6 +355,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
             return (
               <g
                 key={item.id}
+                className="floorplan-canvas__item-group"
                 transform={`translate(${item.x} ${item.y}) rotate(${item.rotation})`}
                 onMouseDown={(e) => startDragFurniture(e, item)}
                 style={{ cursor: mode === "place" ? "move" : "default" }}
@@ -366,7 +375,15 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
                       strokeWidth="1.5"
                       strokeDasharray="4 3"
                     />
-                    <text textAnchor="middle" dy={item.depth / 2 / (scalePxPerUnit || 1) + 14} className="mono floorplan-canvas__furniture-label">
+                    <text
+                      textAnchor="middle"
+                      dy="4"
+                      className="mono floorplan-canvas__furniture-label"
+                      paintOrder="stroke"
+                      stroke="var(--color-paper)"
+                      strokeWidth="3"
+                      strokeLinejoin="round"
+                    >
                       {item.label}
                     </text>
                   </>

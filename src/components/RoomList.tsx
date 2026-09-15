@@ -1,50 +1,156 @@
-import type { Room } from "../lib/types";
+import type { Folder, Room } from "../lib/types";
 
 interface RoomListProps {
   rooms: Room[];
+  folders: Folder[];
   activeRoomId: string | null;
   onSelect: (id: string) => void;
-  onCreate: () => void;
+  onCreate: (folderId?: string | null) => void;
   onRename: (id: string) => void;
   onDelete: (id: string) => void;
+  onMoveToFolder: (roomId: string, folderId: string | null) => void;
+  onCreateFolder: () => void;
+  onRenameFolder: (id: string) => void;
+  onDeleteFolder: (id: string) => void;
 }
 
-export default function RoomList({ rooms, activeRoomId, onSelect, onCreate, onRename, onDelete }: RoomListProps) {
+function RoomRow({
+  room,
+  folders,
+  isActive,
+  onSelect,
+  onRename,
+  onDelete,
+  onMoveToFolder,
+}: {
+  room: Room;
+  folders: Folder[];
+  isActive: boolean;
+  onSelect: (id: string) => void;
+  onRename: (id: string) => void;
+  onDelete: (id: string) => void;
+  onMoveToFolder: (roomId: string, folderId: string | null) => void;
+}) {
+  return (
+    <li className="room-list__row">
+      <button
+        className={isActive ? "room-list__item room-list__item--active" : "room-list__item"}
+        onClick={() => onSelect(room.id)}
+      >
+        {room.name}
+      </button>
+      <select
+        className="room-list__folder-select"
+        value={room.folderId ?? ""}
+        title="Move to folder"
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => onMoveToFolder(room.id, e.target.value || null)}
+      >
+        <option value="">No folder</option>
+        {folders.map((f) => (
+          <option key={f.id} value={f.id}>
+            {f.name}
+          </option>
+        ))}
+      </select>
+      <button
+        className="room-list__rename"
+        title="Rename room"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRename(room.id);
+        }}
+      >
+        ✎
+      </button>
+      <button
+        className="room-list__delete"
+        title="Delete room"
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete(room.id);
+        }}
+      >
+        🗑
+      </button>
+    </li>
+  );
+}
+
+export default function RoomList({
+  rooms,
+  folders,
+  activeRoomId,
+  onSelect,
+  onCreate,
+  onRename,
+  onDelete,
+  onMoveToFolder,
+  onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
+}: RoomListProps) {
+  const ungrouped = rooms.filter((r) => !r.folderId);
+
   return (
     <nav className="room-list">
       <div className="room-list__header">
-        <button onClick={onCreate}>+ New Room</button>
+        <button onClick={() => onCreate(null)}>+ New Room</button>
+        <button onClick={onCreateFolder} title="New folder">
+          + Folder
+        </button>
       </div>
+
+      {folders.map((folder) => {
+        const roomsInFolder = rooms.filter((r) => r.folderId === folder.id);
+        return (
+          <div key={folder.id} className="room-list__folder">
+            <div className="room-list__folder-header">
+              <span>📁 {folder.name}</span>
+              <div className="room-list__folder-actions">
+                <button title="Add room to this folder" onClick={() => onCreate(folder.id)}>
+                  +
+                </button>
+                <button title="Rename folder" onClick={() => onRenameFolder(folder.id)}>
+                  ✎
+                </button>
+                <button title="Delete folder" onClick={() => onDeleteFolder(folder.id)}>
+                  🗑
+                </button>
+              </div>
+            </div>
+            <ul>
+              {roomsInFolder.map((room) => (
+                <RoomRow
+                  key={room.id}
+                  room={room}
+                  folders={folders}
+                  isActive={room.id === activeRoomId}
+                  onSelect={onSelect}
+                  onRename={onRename}
+                  onDelete={onDelete}
+                  onMoveToFolder={onMoveToFolder}
+                />
+              ))}
+              {roomsInFolder.length === 0 && <li className="room-list__empty">Empty</li>}
+            </ul>
+          </div>
+        );
+      })}
+
+      {folders.length > 0 && <div className="room-list__folder-header room-list__folder-header--plain">UNGROUPED</div>}
       <ul>
-        {rooms.map((room) => (
-          <li key={room.id} className="room-list__row">
-            <button
-              className={room.id === activeRoomId ? "room-list__item room-list__item--active" : "room-list__item"}
-              onClick={() => onSelect(room.id)}
-            >
-              {room.name}
-            </button>
-            <button
-              className="room-list__rename"
-              title="Rename room"
-              onClick={(e) => {
-                e.stopPropagation();
-                onRename(room.id);
-              }}
-            >
-              ✎
-            </button>
-            <button
-              className="room-list__delete"
-              title="Delete room"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(room.id);
-              }}
-            >
-              🗑
-            </button>
-          </li>
+        {ungrouped.map((room) => (
+          <RoomRow
+            key={room.id}
+            room={room}
+            folders={folders}
+            isActive={room.id === activeRoomId}
+            onSelect={onSelect}
+            onRename={onRename}
+            onDelete={onDelete}
+            onMoveToFolder={onMoveToFolder}
+          />
         ))}
         {rooms.length === 0 && <li className="room-list__empty">No rooms yet</li>}
       </ul>
