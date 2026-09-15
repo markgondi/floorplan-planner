@@ -95,8 +95,28 @@ export function projectAlongWall(p: Point, wall: WallRun): number {
 
 // Perpendicular distance from `p` to the infinite line through the wall.
 export function distanceFromWallLine(p: Point, wall: WallRun): number {
+  return Math.abs(signedDistanceFromWall(p, wall));
+}
+
+// Perpendicular offset from the wall line, keeping the sign so a point can be moved along
+// the wall without hopping to the other side of it.
+export function signedDistanceFromWall(p: Point, wall: WallRun): number {
   const dx = wall.to.x - wall.from.x;
   const dy = wall.to.y - wall.from.y;
   const len = Math.hypot(dx, dy) || 1;
-  return Math.abs((p.x - wall.from.x) * dy - (p.y - wall.from.y) * dx) / len;
+  return ((p.x - wall.from.x) * -dy + (p.y - wall.from.y) * dx) / len;
+}
+
+// Rebuild a plan-space point from wall-relative coordinates — the inverse of
+// projectAlongWall + signedDistanceFromWall.
+export function pointOnWall(wall: WallRun, alongPx: number, perpPx: number): Point {
+  const dx = wall.to.x - wall.from.x;
+  const dy = wall.to.y - wall.from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  return {
+    x: wall.from.x + ux * alongPx + -uy * perpPx,
+    y: wall.from.y + uy * alongPx + ux * perpPx,
+  };
 }

@@ -1,6 +1,8 @@
+import { useRef, useState } from "react";
 import type { WallRun } from "../lib/geometry";
-import { distanceFromWallLine, projectAlongWall, pxToReal } from "../lib/geometry";
+import { distanceFromWallLine, pointOnWall, projectAlongWall, pxToReal, signedDistanceFromWall } from "../lib/geometry";
 import type { Furniture } from "../lib/types";
+import { KIND_COLOR } from "../lib/types";
 import type { Unit } from "../lib/units";
 import { formatLength } from "../lib/units";
 
@@ -13,6 +15,7 @@ interface SideViewProps {
   selectedWallIndex: number | null;
   selectedFurnitureId: string | null;
   onSelectFurniture: (id: string | null) => void;
+  onFurnitureChange: (id: string, patch: Partial<Furniture>) => void;
 }
 
 const PX_PER_CM = 2;
@@ -33,9 +36,59 @@ export default function SideView({
   selectedWallIndex,
   selectedFurnitureId,
   onSelectFurniture,
+  onFurnitureChange,
 }: SideViewProps) {
   const ceilingPx = ceilingHeightCm * PX_PER_CM;
   const scale = scalePxPerUnit || 1;
+  const svgRef = useRef<SVGSVGElement>(null);
+  const drag = useRef<{ id: string; startX: number; startY: number; alongPx: number; perpPx: number; elevation: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  // Screen -> viewBox, which matters here because the drawing is letterboxed to fit.
+  function toViewBox(e: React.MouseEvent) {
+    const svg = svgRef.current;
+    if (!svg) return { x: 0, y: 0 };
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return { x: 0, y: 0 };
+    const pt = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse());
+    return { x: pt.x, y: pt.y };
+  }
+
+  function startDrag(e: React.MouseEvent, item: Furniture) {
+    e.stopPropagation();
+    onSelectFurniture(item.id);
+    const p = toViewBox(e);
+    drag.current = {
+      id: item.id,
+      startX: p.x,
+      startY: p.y,
+      alongPx: selectedWall ? projectAlongWall({ x: item.x, y: item.y }, selectedWall) : item.x,
+      perpPx: selectedWall ? signedDistanceFromWall({ x: item.x, y: item.y }, selectedWall) : 0,
+      elevation: item.elevation,
+    };
+    setDragging(true);
+  }
+
+  function handleMove(e: React.MouseEvent) {
+    const d = drag.current;
+    if (!d) return;
+    const p = toViewBox(e);
+    // Horizontal drag slides the item along the wall; vertical drag changes its height off the floor.
+    const dAlongPx = (p.x - d.startX) / PX_PER_CM / scale;
+    const dElevationCm = -(p.y - d.startY) / PX_PER_CM;
+    const elevation = Math.max(0, Math.round(d.elevation + dElevationCm));
+    if (selectedWall) {
+      const next = pointOnWall(selectedWall, d.alongPx + dAlongPx, d.perpPx);
+      onFurnitureChange(d.id, { x: next.x, y: next.y, elevation });
+    } else {
+      onFurnitureChange(d.id, { x: d.alongPx + dAlongPx, elevation });
+    }
+  }
+
+  function endDrag() {
+    drag.current = null;
+    setDragging(false);
+  }
 
   // Resolve each item to a horizontal position (cm along the viewed wall) and whether
   // it belongs to this wall's elevation at all.
@@ -72,10 +125,17 @@ export default function SideView({
     <div className="floorplan-canvas">
       <div className="floorplan-canvas__scroll floorplan-canvas__scroll--fit">
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
           className="floorplan-canvas__svg floorplan-canvas__svg--fit"
           preserveAspectRatio="xMidYMid meet"
-          onClick={() => onSelectFurniture(null)}
+          style={dragging ? { cursor: "grabbing" } : undefined}
+          onClick={() => {
+            if (!drag.current) onSelectFurniture(null);
+          }}
+          onMouseMove={handleMove}
+          onMouseUp={endDrag}
+          onMouseLeave={endDrag}
         >
           <defs>
             <pattern id="sideGrid" width={PX_PER_CM * 10} height={PX_PER_CM * 10} patternUnits="userSpaceOnUse">
@@ -150,20 +210,21 @@ export default function SideView({
               <g
                 key={item.id}
                 className="floorplan-canvas__item-group"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectFurniture(item.id);
-                }}
-                style={{ cursor: "pointer" }}
+                onMouseDown={(e) => startDrag(e, item)}
+                onClick={(e) => e.stopPropagation()}
+                style={{ cursor: "grab" }}
               >
-                <title>{`${item.label} — ${formatLength(item.width, unit)} wide x ${formatLength(item.height, unit)} tall`}</title>
+                <title>
+                  {`${item.label} — ${formatLength(item.width, unit)} wide x ${formatLength(item.height, unit)} tall, ` +
+                    `${formatLength(item.elevation, unit)} off the floor. Drag to move along the wall or change its height.`}
+                </title>
                 <rect
                   x={itemX}
                   y={itemY}
                   width={wPx}
                   height={hPx}
                   rx={2}
-                  fill={item.color}
+                  fill={KIND_COLOR[item.kind]}
                   fillOpacity={isWall ? 0.4 : 0.8}
                   stroke={isSelected ? "var(--color-accent)" : "var(--color-line)"}
                   strokeWidth={isSelected ? 3 : 1.2}

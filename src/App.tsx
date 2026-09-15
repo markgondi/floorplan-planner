@@ -157,10 +157,10 @@ export default function App() {
     ? polygonPerimeterSegments(activeRoom.outline).reduce((sum, s) => sum + s.length, 0)
     : 0;
 
-  // Selecting an item and selecting a wall are mutually exclusive, like most CAD tools.
+  // A selected wall is the Side view's viewing context, not a rival selection — picking an
+  // item keeps the wall you're looking at so you can still move and edit that item.
   function handleSelectFurniture(id: string | null) {
     setSelectedFurnitureId(id);
-    if (id !== null) setSelectedWallIndex(null);
   }
 
   function updateActiveRoom(patch: Partial<Room>) {
@@ -573,6 +573,7 @@ export default function App() {
                 selectedWallIndex={selectedWallIndex}
                 selectedFurnitureId={selectedFurnitureId}
                 onSelectFurniture={handleSelectFurniture}
+                onFurnitureChange={handleUpdateFurniture}
               />
             )
           ) : (

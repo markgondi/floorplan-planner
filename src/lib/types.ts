@@ -31,14 +31,27 @@ export interface FurniturePreset {
   color: string;
 }
 
+// One colour per kind so the plan reads consistently: neutral greys for structure,
+// blue-grey for technology, warm neutrals for furniture, the accent for access control.
+// Colour isn't user-editable, so rendering derives from this rather than stored values.
+export const KIND_COLOR: Record<FurnitureKind, string> = {
+  wall: "#6b7076",
+  door: "#8a9299",
+  reader: "#c47f5e",
+  screen: "#4a5560",
+  shelf: "#8a7f6e",
+  bench: "#9a8a72",
+  generic: "#7d8288",
+};
+
 export const FURNITURE_PRESETS: FurniturePreset[] = [
-  { id: "wall", label: "Wall", kind: "wall", width: 200, depth: 10, height: 240, elevation: 0, color: "#4a453b" },
-  { id: "door", label: "Door", kind: "door", width: 90, depth: 5, height: 200, elevation: 0, color: "#8a7c62" },
-  { id: "access-reader", label: "Access Reader", kind: "reader", width: 10, depth: 10, height: 12, elevation: 110, color: "#b3593a" },
-  { id: "screen-34", label: '34" Curved Monitor', kind: "screen", width: 80, depth: 12, height: 50, elevation: 75, color: "#2a2721" },
-  { id: "shelf-unit", label: "Shelf Unit", kind: "shelf", width: 90, depth: 35, height: 180, elevation: 0, color: "#8a6a45" },
-  { id: "bench", label: "Bench", kind: "bench", width: 120, depth: 45, height: 45, elevation: 0, color: "#a9754e" },
-  { id: "custom-item", label: "Custom Item", kind: "generic", width: 60, depth: 60, height: 60, elevation: 0, color: "#b3593a" },
+  { id: "wall", label: "Wall", kind: "wall", width: 200, depth: 10, height: 240, elevation: 0, color: KIND_COLOR.wall },
+  { id: "door", label: "Door", kind: "door", width: 90, depth: 5, height: 200, elevation: 0, color: KIND_COLOR.door },
+  { id: "access-reader", label: "Access Reader", kind: "reader", width: 10, depth: 10, height: 12, elevation: 110, color: KIND_COLOR.reader },
+  { id: "screen-34", label: '34" Curved Monitor', kind: "screen", width: 80, depth: 12, height: 50, elevation: 75, color: KIND_COLOR.screen },
+  { id: "shelf-unit", label: "Shelf Unit", kind: "shelf", width: 90, depth: 35, height: 180, elevation: 0, color: KIND_COLOR.shelf },
+  { id: "bench", label: "Bench", kind: "bench", width: 120, depth: 45, height: 45, elevation: 0, color: KIND_COLOR.bench },
+  { id: "custom-item", label: "Custom Item", kind: "generic", width: 60, depth: 60, height: 60, elevation: 0, color: KIND_COLOR.generic },
 ];
 
 export interface Room {

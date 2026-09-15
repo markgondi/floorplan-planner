@@ -337,6 +337,17 @@
   color: var(--color-accent);
 }
 
+@keyframes rail-mark-in {
+  from {
+    transform: scaleY(0.2);
+    opacity: 0;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
 .tool-rail__btn--active::before {
   content: "";
   position: absolute;
@@ -346,6 +357,15 @@
   width: 2px;
   border-radius: 0 2px 2px 0;
   background: var(--color-accent);
+  animation: rail-mark-in 0.22s var(--ease);
+}
+
+.tool-rail__btn svg {
+  transition: transform 0.18s var(--ease);
+}
+
+.tool-rail__btn:hover svg {
+  transform: translateY(-1px) scale(1.06);
 }
 
 /* ─── Sidebar ──────────────────────────────────────────────────────────── */
@@ -357,6 +377,22 @@
   flex-direction: column;
   background: var(--color-surface);
   min-height: 0;
+  transition: width 0.24s var(--ease);
+}
+
+@keyframes fade-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sidebar__body > * {
+  animation: fade-slide-in 0.2s var(--ease);
 }
 
 .sidebar--left {
@@ -571,8 +607,37 @@
   opacity: 0.85;
 }
 
+/* Marching ants on the selection, the way a drafting tool signals an active object. */
+@keyframes marching-ants {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+
+.floorplan-canvas__marching {
+  stroke-dasharray: 5 2;
+  animation: marching-ants 0.7s linear infinite;
+}
+
+.floorplan-canvas__item-dims {
+  font-size: 8.5px;
+  fill: var(--color-line-soft);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+@keyframes item-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .floorplan-canvas__item-group {
   transition: filter 0.12s ease;
+  animation: item-in 0.22s var(--ease);
 }
 
 .floorplan-canvas__item-group:hover {
@@ -694,6 +759,11 @@
 .status-bar__value {
   color: var(--color-charcoal);
   font-size: 11px;
+  transition: color 0.2s ease;
+}
+
+.status-bar__cell {
+  animation: fade-slide-in 0.2s var(--ease);
 }
 
 .status-bar__cell--accent .status-bar__value {

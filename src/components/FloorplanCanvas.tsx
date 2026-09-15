@@ -1,7 +1,8 @@
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { Point } from "../lib/geometry";
 import { distance, mergeCollinearWalls, polygonPerimeterSegments, pxToReal, snapAngle } from "../lib/geometry";
 import type { Comment, Furniture } from "../lib/types";
+import { KIND_COLOR } from "../lib/types";
 import type { Unit } from "../lib/units";
 import { formatLength } from "../lib/units";
 import { exportSvgAsPng } from "../lib/export";
@@ -40,31 +41,88 @@ const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 const GRID_MINOR = 20;
 
+// Every item is drawn the same way — the item's own colour as a flat fill, one hairline
+// outline weight — with only the interior detail changing per kind. Keeps the plan reading
+// as one drawing rather than a collage of different styles.
+const GLYPH_STROKE = 1.2;
+const DETAIL_STROKE = 0.9;
+
 function FurnitureGlyph({ item, scalePxPerUnit }: { item: Furniture; scalePxPerUnit: number }) {
   const wPx = item.width / (scalePxPerUnit || 1);
   const dPx = item.depth / (scalePxPerUnit || 1);
   const x = -wPx / 2;
   const y = -dPx / 2;
 
+  const base = (radius = 0, fillOpacity = 0.85) => (
+    <rect
+      x={x}
+      y={y}
+      width={wPx}
+      height={dPx}
+      rx={radius}
+      fill={KIND_COLOR[item.kind]}
+      fillOpacity={fillOpacity}
+      stroke="var(--color-line)"
+      strokeWidth={GLYPH_STROKE}
+    />
+  );
+
+  // Evenly spaced interior division lines, used by shelving and seating.
+  const divisions = (count: number, inset: number, opacity: number) =>
+    Array.from({ length: Math.max(0, count - 1) }).map((_, i, arr) => {
+      const sx = x + (wPx / (arr.length + 1)) * (i + 1);
+      return (
+        <line
+          key={i}
+          x1={sx}
+          y1={y + inset}
+          x2={sx}
+          y2={y + dPx - inset}
+          stroke="var(--color-canvas)"
+          strokeOpacity={opacity}
+          strokeWidth={DETAIL_STROKE}
+        />
+      );
+    });
+
   if (item.kind === "wall") {
-    return <rect x={x} y={y} width={wPx} height={dPx} fill="var(--color-line)" />;
+    return base(0, 1);
   }
 
   if (item.kind === "door") {
+    // Standard architectural door: an opening in the wall, the leaf shown open at 90°,
+    // and a quarter-circle showing its swing back to the closed position.
+    const leaf = wPx;
+    const thickness = Math.max(dPx, 2.5);
     const hingeX = x;
-    const r = wPx;
     return (
       <>
-        <rect x={x} y={y} width={wPx} height={Math.max(dPx, 2)} fill="var(--color-line-soft)" />
+        <rect
+          x={x}
+          y={-thickness / 2}
+          width={leaf}
+          height={thickness}
+          fill="var(--color-canvas)"
+          stroke="var(--color-line-soft)"
+          strokeWidth={DETAIL_STROKE}
+        />
         <path
-          d={`M ${hingeX} 0 A ${r} ${r} 0 0 1 ${hingeX + r} ${-r}`}
+          d={`M ${hingeX} ${-leaf} A ${leaf} ${leaf} 0 0 1 ${hingeX + leaf} 0`}
           fill="none"
           stroke="var(--color-line-soft)"
-          strokeWidth="1"
-          strokeDasharray="3 2"
-          opacity="0.6"
+          strokeWidth={DETAIL_STROKE}
+          strokeDasharray="4 3"
+          opacity="0.5"
         />
-        <line x1={hingeX} y1={0} x2={hingeX + r} y2={-r} stroke="var(--color-line-soft)" strokeWidth="1.2" opacity="0.85" />
+        <rect
+          x={hingeX}
+          y={-leaf}
+          width={thickness}
+          height={leaf}
+          fill={KIND_COLOR[item.kind]}
+          stroke="var(--color-line)"
+          strokeWidth={GLYPH_STROKE}
+        />
       </>
     );
   }
@@ -72,40 +130,37 @@ function FurnitureGlyph({ item, scalePxPerUnit }: { item: Furniture; scalePxPerU
   if (item.kind === "reader") {
     return (
       <>
-        <rect x={x} y={y} width={wPx} height={dPx} rx={1.5} fill="var(--color-surface-alt)" stroke="var(--color-accent)" strokeWidth="1.2" />
-        <circle cx="0" cy="0" r={Math.min(wPx, dPx) * 0.22} fill="var(--color-accent)" />
+        {base(1.5)}
+        <circle cx="0" cy="0" r={Math.min(wPx, dPx) * 0.22} fill="var(--color-canvas)" fillOpacity="0.8" />
       </>
     );
   }
 
   if (item.kind === "screen") {
-    const bezel = Math.min(dPx * 0.18, 6);
+    // Screens read as a bezel with a recessed face, and a tick marking which way they face.
+    const bezel = Math.min(dPx * 0.22, 5);
     return (
       <>
-        <rect x={x} y={y} width={wPx} height={dPx} rx={dPx * 0.12} fill="url(#screenBezel)" stroke="var(--color-line)" strokeWidth="1.2" />
+        {base(1.5)}
         <rect
           x={x + bezel}
           y={y + bezel}
-          width={wPx - bezel * 2}
-          height={dPx - bezel * 2}
-          rx={2}
-          fill="url(#screenGlass)"
+          width={Math.max(0, wPx - bezel * 2)}
+          height={Math.max(0, dPx - bezel * 2)}
+          rx={1}
+          fill="var(--color-canvas)"
+          fillOpacity="0.45"
         />
+        <line x1={x} y1={y} x2={x + wPx} y2={y} stroke="var(--color-accent)" strokeWidth={GLYPH_STROKE} />
       </>
     );
   }
 
   if (item.kind === "shelf") {
-    const shelfCount = Math.max(2, Math.round(wPx / 40));
-    const slats = Array.from({ length: shelfCount });
     return (
       <>
-        <rect x={x} y={y} width={wPx} height={dPx} fill="url(#shelfWood)" stroke="var(--color-line)" strokeWidth="1.2" />
-        {slats.map((_, i) => {
-          if (i === 0) return null;
-          const sx = x + (wPx / shelfCount) * i;
-          return <line key={i} x1={sx} y1={y} x2={sx} y2={y + dPx} stroke="var(--color-charcoal)" strokeOpacity="0.25" strokeWidth="1" />;
-        })}
+        {base()}
+        {divisions(Math.max(2, Math.round(wPx / 40)), 0, 0.35)}
       </>
     );
   }
@@ -113,16 +168,13 @@ function FurnitureGlyph({ item, scalePxPerUnit }: { item: Furniture; scalePxPerU
   if (item.kind === "bench") {
     return (
       <>
-        <rect x={x} y={y} width={wPx} height={dPx} rx={3} fill="url(#benchWood)" stroke="var(--color-line)" strokeWidth="1.2" />
-        {Array.from({ length: Math.max(2, Math.round(wPx / 30)) - 1 }).map((_, i, arr) => {
-          const sx = x + (wPx / (arr.length + 1)) * (i + 1);
-          return <line key={i} x1={sx} y1={y + 2} x2={sx} y2={y + dPx - 2} stroke="var(--color-charcoal)" strokeOpacity="0.15" strokeWidth="1" />;
-        })}
+        {base(2)}
+        {divisions(Math.max(2, Math.round(wPx / 30)), 2, 0.22)}
       </>
     );
   }
 
-  return <rect x={x} y={y} width={wPx} height={dPx} fill="url(#genericFill)" stroke="var(--color-line)" strokeWidth="1.2" />;
+  return base();
 }
 
 const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(function FloorplanCanvas(
@@ -157,6 +209,28 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
   const panState = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
   const didPan = useRef(false);
   const [crosshair, setCrosshair] = useState<Point | null>(null);
+  const [spaceHeld, setSpaceHeld] = useState(false);
+
+  // Hold space to pan from any tool, the way most drawing apps do — otherwise panning
+  // means either switching tools or holding the middle mouse button.
+  useEffect(() => {
+    function down(e: KeyboardEvent) {
+      if (e.code !== "Space" || e.repeat) return;
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return;
+      e.preventDefault();
+      setSpaceHeld(true);
+    }
+    function up(e: KeyboardEvent) {
+      if (e.code === "Space") setSpaceHeld(false);
+    }
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+  }, []);
   const [isPanning, setIsPanning] = useState(false);
 
   const segments = polygonPerimeterSegments(outline);
@@ -217,10 +291,11 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
   }
 
   function startDragFurniture(e: React.MouseEvent, item: Furniture) {
+    if (spaceHeld) return;
     if (mode !== "arrange" && mode !== "select") return;
     e.stopPropagation();
+    // Keep any selected wall — it's the Side view's viewing context, not a rival selection.
     onSelectFurniture(item.id);
-    onSelectWall(null);
     if (mode !== "arrange") return;
     const p = toSvgPoint(e);
     setDragId(item.id);
@@ -228,7 +303,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
   }
 
   function handleScrollMouseDown(e: React.MouseEvent) {
-    if (mode !== "select" && e.button !== 1) return;
+    if (mode !== "select" && e.button !== 1 && !spaceHeld) return;
     e.preventDefault();
     const container = scrollRef.current;
     if (!container) return;
@@ -285,7 +360,9 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     <div className="floorplan-canvas">
       <div
         ref={scrollRef}
-        className={mode === "select" ? "floorplan-canvas__scroll floorplan-canvas__scroll--pan" : "floorplan-canvas__scroll"}
+        className={
+          mode === "select" || spaceHeld ? "floorplan-canvas__scroll floorplan-canvas__scroll--pan" : "floorplan-canvas__scroll"
+        }
         onWheel={handleWheel}
         onMouseDown={handleScrollMouseDown}
         onMouseMove={handleMouseMove}
@@ -311,26 +388,6 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
             <pattern id="gridMajor" width="100" height="100" patternUnits="userSpaceOnUse">
               <path d="M 100 0 L 0 0 0 100" fill="none" stroke="var(--color-grid)" strokeWidth="1" opacity="0.8" />
             </pattern>
-            <linearGradient id="screenBezel" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#3a3630" />
-              <stop offset="100%" stopColor="#161412" />
-            </linearGradient>
-            <linearGradient id="screenGlass" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#4a6a78" />
-              <stop offset="100%" stopColor="#1c2a30" />
-            </linearGradient>
-            <linearGradient id="shelfWood" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#a9764c" />
-              <stop offset="100%" stopColor="#7a5533" />
-            </linearGradient>
-            <linearGradient id="benchWood" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#c08a58" />
-              <stop offset="100%" stopColor="#8f6136" />
-            </linearGradient>
-            <linearGradient id="genericFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--color-accent-soft)" />
-              <stop offset="100%" stopColor="var(--color-accent)" />
-            </linearGradient>
             <filter id="dropShadow" x="-50%" y="-50%" width="200%" height="200%">
               <feDropShadow dx="0" dy="3" stdDeviation="3" floodColor="#000000" floodOpacity="0.45" />
             </filter>
@@ -403,7 +460,6 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onSelectFurniture(null);
                       onSelectWall(isSelectedWall ? null : i);
                     }}
                   >
@@ -423,6 +479,8 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
 
           {furniture.map((item) => {
             const isSelected = item.id === selectedFurnitureId;
+            const itemWidthPx = item.width / (scalePxPerUnit || 1);
+            const itemDepthPx = item.depth / (scalePxPerUnit || 1);
             return (
               <g
                 key={item.id}
@@ -444,7 +502,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
                       fill="none"
                       stroke="var(--color-accent)"
                       strokeWidth="1.5"
-                      strokeDasharray="4 3"
+                      className="floorplan-canvas__marching"
                     />
                     <text
                       textAnchor="middle"
@@ -458,6 +516,20 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
                       {item.label}
                     </text>
                   </>
+                )}
+                {/* Dimensions sit quietly under each item so the plan reads at a glance. */}
+                {itemWidthPx > 34 && (
+                  <text
+                    textAnchor="middle"
+                    dy={itemDepthPx / 2 + 11}
+                    className="mono floorplan-canvas__item-dims"
+                    paintOrder="stroke"
+                    stroke="var(--color-canvas)"
+                    strokeWidth="2.5"
+                    strokeLinejoin="round"
+                  >
+                    {formatLength(item.width, unit)} × {formatLength(item.depth, unit)}
+                  </text>
                 )}
               </g>
             );
