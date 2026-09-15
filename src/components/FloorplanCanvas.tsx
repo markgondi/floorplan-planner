@@ -23,6 +23,8 @@ interface FloorplanCanvasProps {
   onFurnitureChange: (id: string, patch: Partial<Furniture>) => void;
   onSelectFurniture: (id: string | null) => void;
   onAddComment: (point: Point) => void;
+  selectedWallIndex: number | null;
+  onSelectWall: (index: number | null) => void;
 }
 
 export interface FloorplanCanvasHandle {
@@ -136,6 +138,8 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     onFurnitureChange,
     onSelectFurniture,
     onAddComment,
+    selectedWallIndex,
+    onSelectWall,
   },
   ref,
 ) {
@@ -202,6 +206,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
       }
     } else {
       onSelectFurniture(null);
+      onSelectWall(null);
     }
   }
 
@@ -209,6 +214,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     e.stopPropagation();
     if (mode !== "place") return;
     onSelectFurniture(item.id);
+    onSelectWall(null);
     const p = toSvgPoint(e);
     setDragId(item.id);
     setDragOffset({ x: p.x - item.x, y: p.y - item.y });
@@ -342,6 +348,50 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
               );
             })}
 
+          {outline.length > 1 &&
+            wallRuns.map((run, i) => {
+              const isSelectedWall = i === selectedWallIndex;
+              const wallLabel = scalePxPerUnit
+                ? formatLength(pxToReal(run.length, scalePxPerUnit), unit)
+                : `${run.length.toFixed(0)} px`;
+              return (
+                <g key={`wall-${i}`}>
+                  {isSelectedWall && (
+                    <line
+                      x1={run.from.x}
+                      y1={run.from.y}
+                      x2={run.to.x}
+                      y2={run.to.y}
+                      stroke="var(--color-accent)"
+                      strokeWidth="6"
+                      strokeLinecap="round"
+                      opacity="0.9"
+                    />
+                  )}
+                  <line
+                    x1={run.from.x}
+                    y1={run.from.y}
+                    x2={run.to.x}
+                    y2={run.to.y}
+                    stroke="transparent"
+                    strokeWidth="16"
+                    strokeLinecap="round"
+                    style={{
+                      cursor: mode === "place" ? "pointer" : undefined,
+                      pointerEvents: mode === "place" ? "stroke" : "none",
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectFurniture(null);
+                      onSelectWall(isSelectedWall ? null : i);
+                    }}
+                  >
+                    <title>{`Wall ${i + 1} — ${wallLabel}. Click to select, then open Side view.`}</title>
+                  </line>
+                </g>
+              );
+            })}
+
           {outline.map((p, i) => (
             <circle key={i} cx={p.x} cy={p.y} r="4" fill="var(--color-charcoal)" />
           ))}
@@ -420,6 +470,15 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
           <span>X — · Y —</span>
         )}
         {realWidthPx && <span>VIEW {formatLength(realWidthPx, unit)} WIDE</span>}
+        {selectedWallIndex !== null && wallRuns[selectedWallIndex] && (
+          <span className="floorplan-canvas__hud-selected">
+            WALL {selectedWallIndex + 1} SELECTED —{" "}
+            {scalePxPerUnit
+              ? formatLength(pxToReal(wallRuns[selectedWallIndex].length, scalePxPerUnit), unit)
+              : `${wallRuns[selectedWallIndex].length.toFixed(0)} px`}{" "}
+            · SWITCH TO SIDE VIEW
+          </span>
+        )}
         {outline.length > 1 && (
           <span>
             PERIMETER {scalePxPerUnit ? formatLength(pxToReal(totalPerimeterPx, scalePxPerUnit), unit) : `${totalPerimeterPx.toFixed(0)} px`}

@@ -13,7 +13,7 @@ import { FURNITURE_PRESETS } from "./lib/types";
 import type { Point } from "./lib/geometry";
 import type { Unit } from "./lib/units";
 import { fromCm, toCm } from "./lib/units";
-import { computeScale } from "./lib/geometry";
+import { computeScale, mergeCollinearWalls } from "./lib/geometry";
 import {
   createComment,
   createFolder,
@@ -34,7 +34,7 @@ type Mode = "trace" | "calibrate" | "place" | "pan" | "comment";
 const MODE_HELP: Record<Mode, string> = {
   trace: "Click points on the canvas to draw the room's wall outline — points snap to the grid. Click near the first point to close the shape.",
   calibrate: "Click two points on a known wall segment, then enter its real-world length — or use \"Grid = 1m\" to set the scale from the grid directly.",
-  place: "Drag items around the canvas. Click one to select it, then use the rotate controls or the side panel to resize it.",
+  place: "Drag items to move them; click one to select it and edit it in the ITEMS panel. Click a room wall to select it, then open Side view to see that wall's elevation.",
   pan: "Click and drag anywhere on the canvas to move around. Nothing is added or changed while panning.",
   comment: "Click anywhere on the canvas to leave a comment pin for reviewers. Resolve or delete comments from the panel.",
 };
@@ -76,6 +76,7 @@ export default function App() {
   const [view, setView] = useState<"top" | "side">("top");
   const [theme, setTheme] = useState<"light" | "dark">("dark");
   const [selectedFurnitureId, setSelectedFurnitureId] = useState<string | null>(null);
+  const [selectedWallIndex, setSelectedWallIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [panelOrder, setPanelOrder] = useState<("rooms" | "items" | "comments")[]>(["rooms", "items", "comments"]);
@@ -127,7 +128,20 @@ export default function App() {
       .catch(() => setComments([]));
   }, [activeRoomId]);
 
+  useEffect(() => {
+    setSelectedWallIndex(null);
+    setSelectedFurnitureId(null);
+  }, [activeRoomId]);
+
   const activeRoom = rooms.find((r) => r.id === activeRoomId) ?? null;
+  const wallRuns = activeRoom ? mergeCollinearWalls(activeRoom.outline) : [];
+  const selectedWall = selectedWallIndex !== null ? (wallRuns[selectedWallIndex] ?? null) : null;
+
+  // Selecting an item and selecting a wall are mutually exclusive, like most CAD tools.
+  function handleSelectFurniture(id: string | null) {
+    setSelectedFurnitureId(id);
+    if (id !== null) setSelectedWallIndex(null);
+  }
 
   function updateActiveRoom(patch: Partial<Room>) {
     if (!activeRoomId) return;
@@ -277,7 +291,7 @@ export default function App() {
       color: preset.color,
     };
     updateActiveRoom({ furniture: [...activeRoom.furniture, item] });
-    setSelectedFurnitureId(item.id);
+    handleSelectFurniture(item.id);
   }
 
   function handleUpdatePreset(id: string, patch: Partial<FurniturePreset>) {
@@ -435,7 +449,11 @@ export default function App() {
               <button className={view === "top" ? "active" : ""} onClick={() => setView("top")} title="Top-down plan view">
                 Top
               </button>
-              <button className={view === "side" ? "active" : ""} onClick={() => setView("side")} title="Side elevation view — items projected along one wall">
+              <button
+                className={view === "side" ? "active" : ""}
+                onClick={() => setView("side")}
+                title="Side elevation view — select a wall in Top view (Place items mode) to see that wall's elevation"
+              >
                 Side
               </button>
             </div>
@@ -483,8 +501,10 @@ export default function App() {
               onOutlineChange={(outline) => updateActiveRoom({ outline })}
               onCalibrate={handleCalibrate}
               onFurnitureChange={handleUpdateFurniture}
-              onSelectFurniture={setSelectedFurnitureId}
+              onSelectFurniture={handleSelectFurniture}
               onAddComment={handleAddComment}
+              selectedWallIndex={selectedWallIndex}
+              onSelectWall={setSelectedWallIndex}
             />
           ) : (
             <SideView
@@ -492,8 +512,10 @@ export default function App() {
               scalePxPerUnit={activeRoom.scalePxPerUnit}
               unit={activeRoom.unit}
               ceilingHeightCm={activeRoom.ceilingHeight}
+              selectedWall={selectedWall}
+              selectedWallIndex={selectedWallIndex}
               selectedFurnitureId={selectedFurnitureId}
-              onSelectFurniture={setSelectedFurnitureId}
+              onSelectFurniture={handleSelectFurniture}
             />
           )
         ) : (
@@ -537,7 +559,7 @@ export default function App() {
               unit={activeRoom.unit}
               selectedId={selectedFurnitureId}
               presets={presets}
-              onSelect={setSelectedFurnitureId}
+              onSelect={handleSelectFurniture}
               onAddPreset={handleAddPreset}
               onUpdatePreset={handleUpdatePreset}
               onUpdate={handleUpdateFurniture}

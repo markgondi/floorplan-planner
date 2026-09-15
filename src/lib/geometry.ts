@@ -83,3 +83,20 @@ export function mergeCollinearWalls(points: Point[]): WallRun[] {
 export function snapAngle(degrees: number, step = 15): number {
   return Math.round(degrees / step) * step;
 }
+
+// Signed position of `p` along the wall's direction, measured from `wall.from` (in the
+// same px units as the points). Negative or > length means the item is past an endpoint.
+export function projectAlongWall(p: Point, wall: WallRun): number {
+  const dx = wall.to.x - wall.from.x;
+  const dy = wall.to.y - wall.from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  return ((p.x - wall.from.x) * dx + (p.y - wall.from.y) * dy) / len;
+}
+
+// Perpendicular distance from `p` to the infinite line through the wall.
+export function distanceFromWallLine(p: Point, wall: WallRun): number {
+  const dx = wall.to.x - wall.from.x;
+  const dy = wall.to.y - wall.from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  return Math.abs((p.x - wall.from.x) * dy - (p.y - wall.from.y) * dx) / len;
+}
