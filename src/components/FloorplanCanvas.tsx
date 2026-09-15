@@ -502,11 +502,14 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
         </button>
       </div>
 
-      {mode === "arrange" && selectedFurnitureId && (
+      {selectedFurnitureId && (
         <div className="canvas-dock canvas-dock--right">
           <button className="canvas-dock__btn" onClick={() => rotateSelected(-15)} title="Rotate 15° anticlockwise">
             ⟲
           </button>
+          <span className="canvas-dock__readout mono">
+            {(((furniture.find((f) => f.id === selectedFurnitureId)?.rotation ?? 0) % 360) + 360) % 360}°
+          </span>
           <button className="canvas-dock__btn" onClick={() => rotateSelected(15)} title="Rotate 15° clockwise">
             ⟳
           </button>

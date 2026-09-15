@@ -645,6 +645,16 @@
   box-shadow: none;
 }
 
+.canvas-dock__readout {
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--color-charcoal);
+  min-width: 40px;
+  justify-content: center;
+}
+
 /* ─── Status bar ───────────────────────────────────────────────────────── */
 
 .status-bar {
@@ -1012,6 +1022,45 @@
 .furniture-panel__item > input {
   border-color: var(--color-hairline);
   font-size: 12px;
+}
+
+.furniture-panel__rotate {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--color-line-soft);
+}
+
+.furniture-panel__rotate button {
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  font-size: 11px;
+  background: transparent;
+  border-color: var(--color-hairline);
+  color: var(--color-line-soft);
+}
+
+.furniture-panel__rotate button:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent-soft);
+  transform: none;
+  box-shadow: none;
+}
+
+.furniture-panel__rotate-reset {
+  margin-left: auto;
+  width: auto !important;
+  padding: 0 7px !important;
+  font-size: 10px !important;
+}
+
+.furniture-panel__angle {
+  color: var(--color-charcoal);
+  min-width: 34px;
+  text-align: center;
+  font-size: 11px;
 }
 
 .furniture-panel__actions {

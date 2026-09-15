@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Furniture, FurniturePreset } from "../lib/types";
 import type { Unit } from "../lib/units";
 import { fromCm, toCm } from "../lib/units";
+import { snapAngle } from "../lib/geometry";
 
 interface FurniturePanelProps {
   furniture: Furniture[];
@@ -132,6 +133,38 @@ export default function FurniturePanel({
                   />
                   <span className="furniture-panel__unit">{unit}</span>
                 </label>
+              </div>
+              <div className="furniture-panel__rotate mono">
+                <span>Rotate</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdate(item.id, { rotation: snapAngle(item.rotation - 15) });
+                  }}
+                  title="Rotate 15° anticlockwise"
+                >
+                  ⟲
+                </button>
+                <span className="furniture-panel__angle">{(((item.rotation % 360) + 360) % 360)}°</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdate(item.id, { rotation: snapAngle(item.rotation + 15) });
+                  }}
+                  title="Rotate 15° clockwise"
+                >
+                  ⟳
+                </button>
+                <button
+                  className="furniture-panel__rotate-reset"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdate(item.id, { rotation: 0 });
+                  }}
+                  title="Reset rotation"
+                >
+                  0°
+                </button>
               </div>
               <div className="furniture-panel__actions">
                 <button onClick={(e) => { e.stopPropagation(); onDuplicate(item.id); }}>Duplicate</button>
