@@ -6,18 +6,25 @@ import FurniturePanel from "./components/FurniturePanel";
 import FloorplanCanvas from "./components/FloorplanCanvas";
 import UnitsToggle from "./components/UnitsToggle";
 import PrintView from "./components/PrintView";
-import type { Room, Furniture } from "./lib/types";
+import type { Room, Furniture, FurniturePreset } from "./lib/types";
+import { FURNITURE_PRESETS } from "./lib/types";
 import type { Unit } from "./lib/units";
 import { computeScale } from "./lib/geometry";
 import { createRoom as apiCreateRoom, listRooms, saveRoom } from "./lib/api";
 
 type Mode = "trace" | "calibrate" | "place";
 
+const MODE_HELP: Record<Mode, string> = {
+  trace: "Click points on the canvas to draw the room's wall outline. Click near the first point to close the shape.",
+  calibrate: "Click two points on a known wall segment, then enter its real-world length to set the drawing scale.",
+  place: "Drag furniture around the canvas. Click a piece to select it, then use the rotate controls or the side panel to resize it.",
+};
+
 export default function App() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("trace");
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [theme, setTheme] = useState<"light" | "dark">("dark");
   const [selectedFurnitureId, setSelectedFurnitureId] = useState<string | null>(null);
   const [showPrint, setShowPrint] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -77,19 +84,21 @@ export default function App() {
     updateActiveRoom({ scalePxPerUnit: computeScale(pixelDistance, realLength) });
   }
 
-  function handleAddFurniture() {
+  function handleAddPreset(preset: FurniturePreset) {
     if (!activeRoom) return;
+    const offset = (activeRoom.furniture.length % 6) * 30;
     const item: Furniture = {
       id: crypto.randomUUID(),
       roomId: activeRoom.id,
-      label: "New Item",
+      label: preset.label,
       shape: "rect",
-      width: 80,
-      depth: 40,
-      x: 450,
-      y: 300,
+      kind: preset.kind,
+      width: preset.width,
+      depth: preset.depth,
+      x: 800 + offset,
+      y: 550 + offset,
       rotation: 0,
-      color: "#b3593a",
+      color: preset.color,
     };
     updateActiveRoom({ furniture: [...activeRoom.furniture, item] });
     setSelectedFurnitureId(item.id);
@@ -141,21 +150,23 @@ export default function App() {
             <>
               <div className="mode-bar">
                 <div className="mode-bar__modes">
-                  <button className={mode === "trace" ? "active" : ""} onClick={() => setMode("trace")}>
+                  <button className={mode === "trace" ? "active" : ""} onClick={() => setMode("trace")} title={MODE_HELP.trace}>
                     Trace outline
                   </button>
-                  <button className={mode === "calibrate" ? "active" : ""} onClick={() => setMode("calibrate")}>
+                  <button className={mode === "calibrate" ? "active" : ""} onClick={() => setMode("calibrate")} title={MODE_HELP.calibrate}>
                     Calibrate scale
                   </button>
-                  <button className={mode === "place" ? "active" : ""} onClick={() => setMode("place")}>
+                  <button className={mode === "place" ? "active" : ""} onClick={() => setMode("place")} title={MODE_HELP.place}>
                     Place furniture
                   </button>
+                  <span className="mode-bar__help mono" title={MODE_HELP[mode]}>?</span>
                 </div>
                 <div className="mode-bar__right">
                   <UnitsToggle unit={activeRoom.unit} onChange={handleUnitChange} />
                   <button onClick={() => setShowPrint((v) => !v)}>{showPrint ? "Back to editor" : "Print / Export"}</button>
                 </div>
               </div>
+              <div className="mode-bar__status mono">{MODE_HELP[mode]}</div>
 
               {showPrint ? (
                 <PrintView room={activeRoom} />
@@ -185,8 +196,9 @@ export default function App() {
             furniture={activeRoom.furniture}
             unit={activeRoom.unit}
             selectedId={selectedFurnitureId}
+            presets={FURNITURE_PRESETS}
             onSelect={setSelectedFurnitureId}
-            onAdd={handleAddFurniture}
+            onAddPreset={handleAddPreset}
             onUpdate={handleUpdateFurniture}
             onDelete={handleDeleteFurniture}
             onDuplicate={handleDuplicateFurniture}

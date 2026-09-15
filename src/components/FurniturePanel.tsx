@@ -1,4 +1,4 @@
-import type { Furniture } from "../lib/types";
+import type { Furniture, FurniturePreset } from "../lib/types";
 import type { Unit } from "../lib/units";
 import { formatLength, fromCm, toCm } from "../lib/units";
 
@@ -6,8 +6,9 @@ interface FurniturePanelProps {
   furniture: Furniture[];
   unit: Unit;
   selectedId: string | null;
+  presets: FurniturePreset[];
   onSelect: (id: string) => void;
-  onAdd: () => void;
+  onAddPreset: (preset: FurniturePreset) => void;
   onUpdate: (id: string, patch: Partial<Furniture>) => void;
   onDelete: (id: string) => void;
   onDuplicate: (id: string) => void;
@@ -17,8 +18,9 @@ export default function FurniturePanel({
   furniture,
   unit,
   selectedId,
+  presets,
   onSelect,
-  onAdd,
+  onAddPreset,
   onUpdate,
   onDelete,
   onDuplicate,
@@ -27,8 +29,21 @@ export default function FurniturePanel({
     <div className="furniture-panel">
       <div className="furniture-panel__header">
         <span className="mono">FURNITURE</span>
-        <button onClick={onAdd}>+ Add</button>
       </div>
+
+      <div className="furniture-panel__presets">
+        {presets.map((preset) => (
+          <button
+            key={preset.label}
+            className="furniture-panel__preset"
+            title={`Add ${preset.label} (${preset.width}cm x ${preset.depth}cm)`}
+            onClick={() => onAddPreset(preset)}
+          >
+            + {preset.label}
+          </button>
+        ))}
+      </div>
+
       <ul className="furniture-panel__list">
         {furniture.map((item) => (
           <li

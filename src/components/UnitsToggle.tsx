@@ -5,15 +5,16 @@ interface UnitsToggleProps {
   onChange: (unit: Unit) => void;
 }
 
+const UNITS: Unit[] = ["mm", "cm", "m"];
+
 export default function UnitsToggle({ unit, onChange }: UnitsToggleProps) {
   return (
     <div className="units-toggle mono">
-      <button className={unit === "cm" ? "active" : ""} onClick={() => onChange("cm")}>
-        cm
-      </button>
-      <button className={unit === "in" ? "active" : ""} onClick={() => onChange("in")}>
-        in
-      </button>
+      {UNITS.map((u) => (
+        <button key={u} className={unit === u ? "active" : ""} onClick={() => onChange(u)}>
+          {u}
+        </button>
+      ))}
     </div>
   );
 }

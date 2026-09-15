@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS furniture (
   room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
   label TEXT NOT NULL,
   shape TEXT NOT NULL DEFAULT 'rect',
+  kind TEXT NOT NULL DEFAULT 'generic',
   width REAL NOT NULL,
   depth REAL NOT NULL,
   x REAL NOT NULL DEFAULT 0,

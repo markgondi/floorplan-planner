@@ -8,10 +8,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 20px;
-  background: var(--color-charcoal);
-  color: var(--color-bg);
-  border-bottom: 2px solid var(--color-accent);
+  padding: 8px 20px;
+  background: var(--color-surface);
+  color: var(--color-charcoal);
+  border-bottom: 1px solid var(--color-line-soft);
+  box-shadow: var(--shadow-panel);
+  z-index: 2;
 }
 
 .app-header__brand {
@@ -21,25 +23,34 @@
 }
 
 .app-header__logo-slot {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 1px dashed var(--color-accent-soft);
+  border-radius: var(--radius-sm);
   font-size: 9px;
   letter-spacing: 0.05em;
   color: var(--color-accent-soft);
+  overflow: hidden;
+}
+
+.app-header__logo-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .app-header__title {
-  letter-spacing: 0.08em;
-  font-size: 14px;
+  letter-spacing: 0.1em;
+  font-size: 13px;
+  color: var(--color-charcoal-soft);
 }
 
 .app-header__theme-toggle {
   background: transparent;
-  color: var(--color-bg);
+  color: var(--color-charcoal);
 }
 
 .sync-banner {
@@ -52,7 +63,7 @@
 .app-body {
   flex: 1;
   display: grid;
-  grid-template-columns: 200px 1fr 260px;
+  grid-template-columns: 170px 1fr 220px;
   min-height: 0;
 }
 
@@ -73,8 +84,9 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 10px;
-  font-size: 12px;
-  letter-spacing: 0.06em;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--color-line-soft);
 }
 
 .room-list ul, .furniture-panel__list {
@@ -101,6 +113,21 @@
 .room-list__empty, .furniture-panel__empty {
   font-size: 12px;
   color: var(--color-line-soft);
+}
+
+.furniture-panel__presets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-line-soft);
+}
+
+.furniture-panel__preset {
+  text-align: left;
+  font-size: 11px;
+  background: var(--color-surface-alt);
 }
 
 .furniture-panel__item {
@@ -156,7 +183,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 16px;
+  padding: 6px 16px;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-line-soft);
 }
@@ -165,6 +192,27 @@
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.mode-bar__help {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-line-soft);
+  border-radius: 50%;
+  font-size: 11px;
+  color: var(--color-line-soft);
+  cursor: help;
+}
+
+.mode-bar__status {
+  padding: 3px 16px;
+  font-size: 10px;
+  color: var(--color-line-soft);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-grid);
 }
 
 .units-toggle {
@@ -188,18 +236,21 @@
   flex: 1;
   position: relative;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  min-height: 0;
   background: var(--color-bg);
-  padding: 16px;
+}
+
+.floorplan-canvas__scroll {
+  flex: 1;
+  overflow: auto;
+  display: flex;
 }
 
 .floorplan-canvas__svg {
-  width: 100%;
-  height: 100%;
-  max-width: 1100px;
+  background: var(--color-canvas);
   border: 1px solid var(--color-line-soft);
-  background: var(--color-paper);
+  margin: auto;
+  flex-shrink: 0;
 }
 
 .floorplan-canvas__dim-label {
@@ -209,12 +260,41 @@
 
 .floorplan-canvas__furniture-label {
   font-size: 10px;
-  fill: var(--color-charcoal);
+  fill: var(--color-charcoal-soft);
+}
+
+.floorplan-canvas__hud {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--color-line-soft);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-soft);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  box-shadow: var(--shadow-panel);
+}
+
+.floorplan-canvas__zoom-controls {
+  position: absolute;
+  bottom: 20px;
+  left: 16px;
+  display: flex;
+  gap: 4px;
+}
+
+.floorplan-canvas__zoom-controls button {
+  width: 32px;
 }
 
 .floorplan-canvas__rotate-controls {
   position: absolute;
-  bottom: 24px;
+  bottom: 20px;
+  right: 16px;
   display: flex;
   gap: 8px;
 }

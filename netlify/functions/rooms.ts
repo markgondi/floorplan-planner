@@ -1,5 +1,5 @@
 import type { Handler } from "@netlify/functions";
-import { createClient } from "@libsql/client";
+import { createClient } from "@libsql/client/web";
 
 const db = createClient({
   url: process.env.TURSO_DATABASE_URL!,
@@ -19,6 +19,7 @@ function rowToRoom(row: any, furnitureRows: any[]) {
       roomId: f.room_id,
       label: f.label,
       shape: f.shape,
+      kind: f.kind ?? "generic",
       width: f.width,
       depth: f.depth,
       x: f.x,
@@ -76,8 +77,8 @@ export const handler: Handler = async (event) => {
     await db.execute({ sql: "DELETE FROM furniture WHERE room_id = ?", args: [room.id] });
     for (const f of room.furniture) {
       await db.execute({
-        sql: `INSERT INTO furniture (id, room_id, label, shape, width, depth, x, y, rotation, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [f.id, room.id, f.label, f.shape, f.width, f.depth, f.x, f.y, f.rotation, f.color],
+        sql: `INSERT INTO furniture (id, room_id, label, shape, kind, width, depth, x, y, rotation, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [f.id, room.id, f.label, f.shape, f.kind ?? "generic", f.width, f.depth, f.x, f.y, f.rotation, f.color],
       });
     }
     return json(200, room);
