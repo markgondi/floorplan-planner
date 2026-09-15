@@ -31,6 +31,7 @@ const VIEW_W = 1600;
 const VIEW_H = 1100;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
+const GRID_MINOR = 20;
 
 function FurnitureGlyph({ item, scalePxPerUnit }: { item: Furniture; scalePxPerUnit: number }) {
   const wPx = item.width / (scalePxPerUnit || 1);
@@ -130,9 +131,16 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     };
   }
 
+  function snapToGrid(p: Point): Point {
+    return {
+      x: Math.round(p.x / GRID_MINOR) * GRID_MINOR,
+      y: Math.round(p.y / GRID_MINOR) * GRID_MINOR,
+    };
+  }
+
   function handleSvgClick(e: React.MouseEvent) {
     if (mode === "pan") return;
-    const p = toSvgPoint(e);
+    const p = snapToGrid(toSvgPoint(e));
     if (mode === "trace") {
       onOutlineChange([...outline, p]);
     } else if (mode === "calibrate") {

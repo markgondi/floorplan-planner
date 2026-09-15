@@ -15,8 +15,8 @@ import { createRoom as apiCreateRoom, deleteRoom, listRooms, saveRoom } from "./
 type Mode = "trace" | "calibrate" | "place" | "pan";
 
 const MODE_HELP: Record<Mode, string> = {
-  trace: "Click points on the canvas to draw the room's wall outline. Click near the first point to close the shape.",
-  calibrate: "Click two points on a known wall segment, then enter its real-world length to set the drawing scale.",
+  trace: "Click points on the canvas to draw the room's wall outline — points snap to the grid. Click near the first point to close the shape.",
+  calibrate: "Click two points on a known wall segment, then enter its real-world length — or use \"Grid = 1m\" to set the scale from the grid directly.",
   place: "Drag items around the canvas. Click one to select it, then use the rotate controls or the side panel to resize it.",
   pan: "Click and drag anywhere on the canvas to move around. Nothing is added or changed while panning.",
 };
@@ -156,6 +156,11 @@ export default function App() {
     updateActiveRoom({ scalePxPerUnit: computeScale(pixelDistance, realLength) });
   }
 
+  function handleSetGridScale() {
+    // Major grid squares are 100 canvas px apart; this makes one square exactly 1 metre.
+    updateActiveRoom({ scalePxPerUnit: 1 });
+  }
+
   function handleAddPreset(preset: FurniturePreset) {
     if (!activeRoom) return;
     const offset = (activeRoom.furniture.length % 6) * 30;
@@ -270,6 +275,14 @@ export default function App() {
                 </button>
                 <button onClick={handleClearOutline} title="Clear the whole traced outline">
                   Clear Outline
+                </button>
+              </>
+            )}
+            {mode === "calibrate" && (
+              <>
+                <span className="mode-bar__divider" />
+                <button onClick={handleSetGridScale} title="Set the scale so one major grid square equals exactly 1 metre">
+                  Grid = 1m
                 </button>
               </>
             )}
