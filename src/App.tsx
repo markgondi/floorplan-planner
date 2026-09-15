@@ -3,9 +3,8 @@ import "./App.css";
 import Header from "./components/Header";
 import RoomList from "./components/RoomList";
 import FurniturePanel from "./components/FurniturePanel";
-import FloorplanCanvas from "./components/FloorplanCanvas";
+import FloorplanCanvas, { type FloorplanCanvasHandle } from "./components/FloorplanCanvas";
 import UnitsToggle from "./components/UnitsToggle";
-import PrintView from "./components/PrintView";
 import DraggablePanel from "./components/DraggablePanel";
 import type { Room, Furniture, FurniturePreset } from "./lib/types";
 import { FURNITURE_PRESETS } from "./lib/types";
@@ -13,13 +12,27 @@ import type { Unit } from "./lib/units";
 import { computeScale } from "./lib/geometry";
 import { createRoom as apiCreateRoom, listRooms, saveRoom } from "./lib/api";
 
-type Mode = "trace" | "calibrate" | "place";
+type Mode = "trace" | "calibrate" | "place" | "pan";
 
 const MODE_HELP: Record<Mode, string> = {
   trace: "Click points on the canvas to draw the room's wall outline. Click near the first point to close the shape.",
   calibrate: "Click two points on a known wall segment, then enter its real-world length to set the drawing scale.",
-  place: "Drag furniture around the canvas. Click a piece to select it, then use the rotate controls or the side panel to resize it.",
+  place: "Drag items around the canvas. Click one to select it, then use the rotate controls or the side panel to resize it.",
+  pan: "Click and drag anywhere on the canvas to move around. Nothing is added or changed while panning.",
 };
+
+const PRESETS_STORAGE_KEY = "floorplan-planner:presets";
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+function loadPresets(): FurniturePreset[] {
+  try {
+    const saved = localStorage.getItem(PRESETS_STORAGE_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch {
+    // ignore malformed local storage
+  }
+  return FURNITURE_PRESETS;
+}
 
 export default function App() {
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -27,12 +40,14 @@ export default function App() {
   const [mode, setMode] = useState<Mode>("trace");
   const [theme, setTheme] = useState<"light" | "dark">("dark");
   const [selectedFurnitureId, setSelectedFurnitureId] = useState<string | null>(null);
-  const [showPrint, setShowPrint] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [panelOrder, setPanelOrder] = useState<("rooms" | "furniture")[]>(["rooms", "furniture"]);
+  const [panelOrder, setPanelOrder] = useState<("rooms" | "items")[]>(["rooms", "items"]);
+  const [presets, setPresets] = useState<FurniturePreset[]>(loadPresets);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didInit = useRef(false);
+  const canvasRef = useRef<FloorplanCanvasHandle>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (didInit.current) return;
@@ -55,6 +70,14 @@ export default function App() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(presets));
+    } catch {
+      // ignore write failures (private browsing, quota, etc.)
+    }
+  }, [presets]);
 
   const activeRoom = rooms.find((r) => r.id === activeRoomId) ?? null;
 
@@ -82,6 +105,20 @@ export default function App() {
     }
   }
 
+  async function handleRenameRoom(id: string) {
+    const room = rooms.find((r) => r.id === id);
+    if (!room) return;
+    const name = window.prompt("Rename room:", room.name);
+    if (!name || name === room.name) return;
+    const next = { ...room, name };
+    setRooms((prev) => prev.map((r) => (r.id === id ? next : r)));
+    try {
+      await saveRoom(next);
+    } catch {
+      setSyncError("Failed to save the room name to the server.");
+    }
+  }
+
   function handleCalibrate(pixelDistance: number, realLength: number) {
     updateActiveRoom({ scalePxPerUnit: computeScale(pixelDistance, realLength) });
   }
@@ -104,6 +141,10 @@ export default function App() {
     };
     updateActiveRoom({ furniture: [...activeRoom.furniture, item] });
     setSelectedFurnitureId(item.id);
+  }
+
+  function handleUpdatePreset(id: string, patch: Partial<FurniturePreset>) {
+    setPresets((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   }
 
   function handleUpdateFurniture(id: string, patch: Partial<Furniture>) {
@@ -131,8 +172,25 @@ export default function App() {
     updateActiveRoom({ unit });
   }
 
-  function bringToFront(panel: "rooms" | "furniture") {
+  function bringToFront(panel: "rooms" | "items") {
     setPanelOrder((prev) => (prev[1] === panel ? prev : [prev[1], panel]));
+  }
+
+  function handleUploadClick() {
+    fileInputRef.current?.click();
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      window.alert("That image is over 5MB — please use a smaller file.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => updateActiveRoom({ floorplanImageUrl: reader.result as string });
+    reader.readAsDataURL(file);
   }
 
   if (loading) {
@@ -159,13 +217,17 @@ export default function App() {
               Calibrate scale
             </button>
             <button className={mode === "place" ? "active" : ""} onClick={() => setMode("place")} title={MODE_HELP.place}>
-              Place furniture
+              Place items
             </button>
-            <span className="mode-bar__help mono" title={MODE_HELP[mode]}>?</span>
+            <button className={mode === "pan" ? "active" : ""} onClick={() => setMode("pan")} title={MODE_HELP.pan}>
+              Pan canvas
+            </button>
           </div>
           <div className="mode-bar__right">
             <UnitsToggle unit={activeRoom.unit} onChange={handleUnitChange} />
-            <button onClick={() => setShowPrint((v) => !v)}>{showPrint ? "Back to editor" : "Print / Export"}</button>
+            <button onClick={handleUploadClick}>Upload Floorplan</button>
+            <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleFileChange} />
+            <button onClick={() => canvasRef.current?.exportPng()}>Export PNG</button>
           </div>
         </div>
       )}
@@ -173,23 +235,21 @@ export default function App() {
 
       <div className="app-body">
         {activeRoom ? (
-          showPrint ? (
-            <PrintView room={activeRoom} />
-          ) : (
-            <FloorplanCanvas
-              outline={activeRoom.outline}
-              scalePxPerUnit={activeRoom.scalePxPerUnit}
-              unit={activeRoom.unit}
-              furniture={activeRoom.furniture}
-              selectedFurnitureId={selectedFurnitureId}
-              imageUrl={activeRoom.floorplanImageUrl}
-              mode={mode}
-              onOutlineChange={(outline) => updateActiveRoom({ outline })}
-              onCalibrate={handleCalibrate}
-              onFurnitureChange={handleUpdateFurniture}
-              onSelectFurniture={setSelectedFurnitureId}
-            />
-          )
+          <FloorplanCanvas
+            ref={canvasRef}
+            roomName={activeRoom.name}
+            outline={activeRoom.outline}
+            scalePxPerUnit={activeRoom.scalePxPerUnit}
+            unit={activeRoom.unit}
+            furniture={activeRoom.furniture}
+            selectedFurnitureId={selectedFurnitureId}
+            imageUrl={activeRoom.floorplanImageUrl}
+            mode={mode}
+            onOutlineChange={(outline) => updateActiveRoom({ outline })}
+            onCalibrate={handleCalibrate}
+            onFurnitureChange={handleUpdateFurniture}
+            onSelectFurniture={setSelectedFurnitureId}
+          />
         ) : (
           <div className="app-main__empty">Create a room to get started.</div>
         )}
@@ -201,24 +261,31 @@ export default function App() {
           zIndex={panelOrder.indexOf("rooms") + 10}
           onFocus={() => bringToFront("rooms")}
         >
-          <RoomList rooms={rooms} activeRoomId={activeRoomId} onSelect={setActiveRoomId} onCreate={handleCreateRoom} />
+          <RoomList
+            rooms={rooms}
+            activeRoomId={activeRoomId}
+            onSelect={setActiveRoomId}
+            onCreate={handleCreateRoom}
+            onRename={handleRenameRoom}
+          />
         </DraggablePanel>
 
-        {activeRoom && !showPrint && (
+        {activeRoom && (
           <DraggablePanel
-            title="FURNITURE"
-            defaultPosition={{ x: 900, y: 16 }}
-            width={230}
-            zIndex={panelOrder.indexOf("furniture") + 10}
-            onFocus={() => bringToFront("furniture")}
+            title="ITEMS"
+            defaultPosition={{ x: Math.max(220, window.innerWidth - 270), y: 16 }}
+            width={240}
+            zIndex={panelOrder.indexOf("items") + 10}
+            onFocus={() => bringToFront("items")}
           >
             <FurniturePanel
               furniture={activeRoom.furniture}
               unit={activeRoom.unit}
               selectedId={selectedFurnitureId}
-              presets={FURNITURE_PRESETS}
+              presets={presets}
               onSelect={setSelectedFurnitureId}
               onAddPreset={handleAddPreset}
+              onUpdatePreset={handleUpdatePreset}
               onUpdate={handleUpdateFurniture}
               onDelete={handleDeleteFurniture}
               onDuplicate={handleDuplicateFurniture}

@@ -1,4 +1,4 @@
-import mqLogo from "../assets/mq-logo.png";
+import mqLogo from "../assets/mq-shield.png";
 
 interface HeaderProps {
   theme: "light" | "dark";

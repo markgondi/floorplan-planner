@@ -19,7 +19,7 @@
   --shadow-panel: 0 2px 10px rgba(0, 0, 0, 0.45);
 }
 
-:root[data-theme="light"] {
+.app-shell[data-theme="light"] {
   --color-bg: #f2ead9;
   --color-surface: #e9dfc7;
   --color-surface-alt: #ddd0ae;

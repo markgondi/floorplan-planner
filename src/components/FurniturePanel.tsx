@@ -9,6 +9,7 @@ interface FurniturePanelProps {
   presets: FurniturePreset[];
   onSelect: (id: string) => void;
   onAddPreset: (preset: FurniturePreset) => void;
+  onUpdatePreset: (id: string, patch: Partial<FurniturePreset>) => void;
   onUpdate: (id: string, patch: Partial<Furniture>) => void;
   onDelete: (id: string) => void;
   onDuplicate: (id: string) => void;
@@ -21,25 +22,52 @@ export default function FurniturePanel({
   presets,
   onSelect,
   onAddPreset,
+  onUpdatePreset,
   onUpdate,
   onDelete,
   onDuplicate,
 }: FurniturePanelProps) {
   return (
     <div className="furniture-panel">
+      <div className="furniture-panel__section-label mono">ADD ITEM</div>
       <div className="furniture-panel__presets">
         {presets.map((preset) => (
-          <button
-            key={preset.label}
-            className="furniture-panel__preset"
-            title={`Add ${preset.label} (${preset.width}cm x ${preset.depth}cm)`}
-            onClick={() => onAddPreset(preset)}
-          >
-            + {preset.label}
-          </button>
+          <div key={preset.id} className="furniture-panel__preset">
+            <input
+              className="furniture-panel__preset-label"
+              value={preset.label}
+              onChange={(e) => onUpdatePreset(preset.id, { label: e.target.value })}
+            />
+            <div className="furniture-panel__preset-dims mono">
+              <label>
+                W
+                <input
+                  type="number"
+                  value={fromCm(preset.width, unit).toFixed(1)}
+                  onChange={(e) => onUpdatePreset(preset.id, { width: toCm(Number(e.target.value), unit) })}
+                />
+              </label>
+              <label>
+                D
+                <input
+                  type="number"
+                  value={fromCm(preset.depth, unit).toFixed(1)}
+                  onChange={(e) => onUpdatePreset(preset.id, { depth: toCm(Number(e.target.value), unit) })}
+                />
+              </label>
+              <button
+                className="furniture-panel__preset-add"
+                title={`Add ${preset.label} to the canvas`}
+                onClick={() => onAddPreset(preset)}
+              >
+                + Add
+              </button>
+            </div>
+          </div>
         ))}
       </div>
 
+      <div className="furniture-panel__section-label mono">PLACED ITEMS</div>
       <ul className="furniture-panel__list">
         {furniture.map((item) => (
           <li
@@ -79,7 +107,7 @@ export default function FurniturePanel({
             </div>
           </li>
         ))}
-        {furniture.length === 0 && <li className="furniture-panel__empty">No furniture placed</li>}
+        {furniture.length === 0 && <li className="furniture-panel__empty">No items placed yet</li>}
       </ul>
     </div>
   );

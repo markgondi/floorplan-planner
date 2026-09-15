@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 interface DraggablePanelProps {
   title: string;
@@ -9,10 +9,28 @@ interface DraggablePanelProps {
   onFocus: () => void;
 }
 
+function clamp(pos: { x: number; y: number }, width: number) {
+  const margin = 40;
+  const maxX = Math.max(margin, window.innerWidth - margin);
+  const maxY = Math.max(margin, window.innerHeight - margin);
+  return {
+    x: Math.min(Math.max(pos.x, 0), Math.max(0, maxX - width)),
+    y: Math.min(Math.max(pos.y, 0), maxY - 28),
+  };
+}
+
 export default function DraggablePanel({ title, children, defaultPosition, width = 220, zIndex, onFocus }: DraggablePanelProps) {
-  const [position, setPosition] = useState(defaultPosition);
+  const [position, setPosition] = useState(() => clamp(defaultPosition, width));
   const [collapsed, setCollapsed] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+
+  useEffect(() => {
+    function handleResize() {
+      setPosition((p) => clamp(p, width));
+    }
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [width]);
 
   function handleHeaderMouseDown(e: React.MouseEvent) {
     onFocus();
@@ -25,7 +43,7 @@ export default function DraggablePanel({ title, children, defaultPosition, width
     if (!dragRef.current) return;
     const dx = e.clientX - dragRef.current.startX;
     const dy = e.clientY - dragRef.current.startY;
-    setPosition({ x: dragRef.current.originX + dx, y: dragRef.current.originY + dy });
+    setPosition(clamp({ x: dragRef.current.originX + dx, y: dragRef.current.originY + dy }, width));
   }
 
   function handleMouseUp() {

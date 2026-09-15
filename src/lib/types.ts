@@ -19,6 +19,7 @@ export interface Furniture {
 }
 
 export interface FurniturePreset {
+  id: string;
   label: string;
   kind: FurnitureKind;
   width: number;
@@ -27,10 +28,10 @@ export interface FurniturePreset {
 }
 
 export const FURNITURE_PRESETS: FurniturePreset[] = [
-  { label: '34" Curved Monitor', kind: "screen", width: 80, depth: 12, color: "#2a2721" },
-  { label: "Shelf Unit", kind: "shelf", width: 90, depth: 35, color: "#8a6a45" },
-  { label: "Bench", kind: "bench", width: 120, depth: 45, color: "#a9754e" },
-  { label: "Custom Box", kind: "generic", width: 60, depth: 60, color: "#b3593a" },
+  { id: "screen-34", label: '34" Curved Monitor', kind: "screen", width: 80, depth: 12, color: "#2a2721" },
+  { id: "shelf-unit", label: "Shelf Unit", kind: "shelf", width: 90, depth: 35, color: "#8a6a45" },
+  { id: "bench", label: "Bench", kind: "bench", width: 120, depth: 45, color: "#a9754e" },
+  { id: "custom-item", label: "Custom Item", kind: "generic", width: 60, depth: 60, color: "#b3593a" },
 ];
 
 export interface Room {

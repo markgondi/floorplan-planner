@@ -1,13 +1,15 @@
-import { useRef, useState } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import type { Point } from "../lib/geometry";
 import { distance, polygonPerimeterSegments, pxToReal, snapAngle } from "../lib/geometry";
 import type { Furniture } from "../lib/types";
 import type { Unit } from "../lib/units";
 import { formatLength } from "../lib/units";
+import { exportSvgAsPng } from "../lib/export";
 
-type Mode = "trace" | "calibrate" | "place";
+type Mode = "trace" | "calibrate" | "place" | "pan";
 
 interface FloorplanCanvasProps {
+  roomName: string;
   outline: Point[];
   scalePxPerUnit: number;
   unit: Unit;
@@ -19,6 +21,10 @@ interface FloorplanCanvasProps {
   onCalibrate: (pixelDistance: number, realLength: number) => void;
   onFurnitureChange: (id: string, patch: Partial<Furniture>) => void;
   onSelectFurniture: (id: string | null) => void;
+}
+
+export interface FloorplanCanvasHandle {
+  exportPng: () => void;
 }
 
 const VIEW_W = 1600;
@@ -79,25 +85,40 @@ function FurnitureGlyph({ item, scalePxPerUnit }: { item: Furniture; scalePxPerU
   return <rect x={x} y={y} width={wPx} height={dPx} fill="url(#genericFill)" stroke="var(--color-line)" strokeWidth="1.2" />;
 }
 
-export default function FloorplanCanvas({
-  outline,
-  scalePxPerUnit,
-  unit,
-  furniture,
-  selectedFurnitureId,
-  imageUrl,
-  mode,
-  onOutlineChange,
-  onCalibrate,
-  onFurnitureChange,
-  onSelectFurniture,
-}: FloorplanCanvasProps) {
+const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(function FloorplanCanvas(
+  {
+    roomName,
+    outline,
+    scalePxPerUnit,
+    unit,
+    furniture,
+    selectedFurnitureId,
+    imageUrl,
+    mode,
+    onOutlineChange,
+    onCalibrate,
+    onFurnitureChange,
+    onSelectFurniture,
+  },
+  ref,
+) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [calibrationPoints, setCalibrationPoints] = useState<Point[]>([]);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<Point>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(0.6);
   const [cursorPos, setCursorPos] = useState<Point | null>(null);
+  const panState = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
+
+  useImperativeHandle(ref, () => ({
+    exportPng: () => {
+      if (svgRef.current) {
+        exportSvgAsPng(svgRef.current, VIEW_W, VIEW_H, { roomName, unit, scalePxPerUnit });
+      }
+    },
+  }));
 
   function toSvgPoint(e: React.MouseEvent): Point {
     const svg = svgRef.current;
@@ -110,6 +131,7 @@ export default function FloorplanCanvas({
   }
 
   function handleSvgClick(e: React.MouseEvent) {
+    if (mode === "pan") return;
     const p = toSvgPoint(e);
     if (mode === "trace") {
       onOutlineChange([...outline, p]);
@@ -139,7 +161,23 @@ export default function FloorplanCanvas({
     setDragOffset({ x: p.x - item.x, y: p.y - item.y });
   }
 
+  function handleScrollMouseDown(e: React.MouseEvent) {
+    if (mode !== "pan" && e.button !== 1) return;
+    e.preventDefault();
+    const container = scrollRef.current;
+    if (!container) return;
+    panState.current = { x: e.clientX, y: e.clientY, scrollLeft: container.scrollLeft, scrollTop: container.scrollTop };
+    setIsPanning(true);
+  }
+
   function handleMouseMove(e: React.MouseEvent) {
+    if (panState.current && scrollRef.current) {
+      const dx = e.clientX - panState.current.x;
+      const dy = e.clientY - panState.current.y;
+      scrollRef.current.scrollLeft = panState.current.scrollLeft - dx;
+      scrollRef.current.scrollTop = panState.current.scrollTop - dy;
+      return;
+    }
     const p = toSvgPoint(e);
     setCursorPos(p);
     if (!dragId) return;
@@ -148,6 +186,8 @@ export default function FloorplanCanvas({
 
   function handleMouseUp() {
     setDragId(null);
+    panState.current = null;
+    setIsPanning(false);
   }
 
   function rotateSelected(delta: number) {
@@ -167,15 +207,22 @@ export default function FloorplanCanvas({
 
   return (
     <div className="floorplan-canvas">
-      <div className="floorplan-canvas__scroll" onWheel={handleWheel}>
+      <div
+        ref={scrollRef}
+        className={mode === "pan" ? "floorplan-canvas__scroll floorplan-canvas__scroll--pan" : "floorplan-canvas__scroll"}
+        onWheel={handleWheel}
+        onMouseDown={handleScrollMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        style={isPanning ? { cursor: "grabbing" } : undefined}
+      >
         <svg
           ref={svgRef}
           viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
           className="floorplan-canvas__svg"
           style={{ width: VIEW_W * zoom, height: VIEW_H * zoom }}
           onClick={handleSvgClick}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
           onMouseLeave={() => setCursorPos(null)}
         >
           <defs>
@@ -254,22 +301,25 @@ export default function FloorplanCanvas({
                 style={{ cursor: mode === "place" ? "move" : "default" }}
                 filter="url(#dropShadow)"
               >
+                <title>{`${item.label} — ${formatLength(item.width, unit)} x ${formatLength(item.depth, unit)}`}</title>
                 <FurnitureGlyph item={item} scalePxPerUnit={scalePxPerUnit} />
                 {isSelected && (
-                  <rect
-                    x={-item.width / 2 / (scalePxPerUnit || 1) - 3}
-                    y={-item.depth / 2 / (scalePxPerUnit || 1) - 3}
-                    width={item.width / (scalePxPerUnit || 1) + 6}
-                    height={item.depth / (scalePxPerUnit || 1) + 6}
-                    fill="none"
-                    stroke="var(--color-accent)"
-                    strokeWidth="1.5"
-                    strokeDasharray="4 3"
-                  />
+                  <>
+                    <rect
+                      x={-item.width / 2 / (scalePxPerUnit || 1) - 3}
+                      y={-item.depth / 2 / (scalePxPerUnit || 1) - 3}
+                      width={item.width / (scalePxPerUnit || 1) + 6}
+                      height={item.depth / (scalePxPerUnit || 1) + 6}
+                      fill="none"
+                      stroke="var(--color-accent)"
+                      strokeWidth="1.5"
+                      strokeDasharray="4 3"
+                    />
+                    <text textAnchor="middle" dy={item.depth / 2 / (scalePxPerUnit || 1) + 14} className="mono floorplan-canvas__furniture-label">
+                      {item.label}
+                    </text>
+                  </>
                 )}
-                <text textAnchor="middle" dy={item.depth / 2 / (scalePxPerUnit || 1) + 14} className="mono floorplan-canvas__furniture-label">
-                  {item.label}
-                </text>
               </g>
             );
           })}
@@ -289,9 +339,9 @@ export default function FloorplanCanvas({
       </div>
 
       <div className="floorplan-canvas__zoom-controls">
-        <button onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z - 0.15))}>−</button>
-        <button onClick={() => setZoom(0.6)}>Reset</button>
-        <button onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z + 0.15))}>+</button>
+        <button className="floorplan-canvas__zoom-btn" onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z - 0.15))}>−</button>
+        <button className="floorplan-canvas__zoom-reset" onClick={() => setZoom(0.6)}>Reset</button>
+        <button className="floorplan-canvas__zoom-btn" onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z + 0.15))}>+</button>
       </div>
 
       {mode === "place" && selectedFurnitureId && (
@@ -302,4 +352,6 @@ export default function FloorplanCanvas({
       )}
     </div>
   );
-}
+});
+
+export default FloorplanCanvas;

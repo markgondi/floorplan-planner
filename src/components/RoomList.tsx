@@ -5,9 +5,10 @@ interface RoomListProps {
   activeRoomId: string | null;
   onSelect: (id: string) => void;
   onCreate: () => void;
+  onRename: (id: string) => void;
 }
 
-export default function RoomList({ rooms, activeRoomId, onSelect, onCreate }: RoomListProps) {
+export default function RoomList({ rooms, activeRoomId, onSelect, onCreate, onRename }: RoomListProps) {
   return (
     <nav className="room-list">
       <div className="room-list__header">
@@ -15,12 +16,22 @@ export default function RoomList({ rooms, activeRoomId, onSelect, onCreate }: Ro
       </div>
       <ul>
         {rooms.map((room) => (
-          <li key={room.id}>
+          <li key={room.id} className="room-list__row">
             <button
               className={room.id === activeRoomId ? "room-list__item room-list__item--active" : "room-list__item"}
               onClick={() => onSelect(room.id)}
             >
               {room.name}
+            </button>
+            <button
+              className="room-list__rename"
+              title="Rename room"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRename(room.id);
+              }}
+            >
+              ✎
             </button>
           </li>
         ))}
