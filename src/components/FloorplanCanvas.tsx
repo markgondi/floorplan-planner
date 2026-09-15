@@ -1,12 +1,12 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import type { Point } from "../lib/geometry";
 import { distance, polygonPerimeterSegments, pxToReal, snapAngle } from "../lib/geometry";
-import type { Furniture } from "../lib/types";
+import type { Comment, Furniture } from "../lib/types";
 import type { Unit } from "../lib/units";
 import { formatLength } from "../lib/units";
 import { exportSvgAsPng } from "../lib/export";
 
-type Mode = "trace" | "calibrate" | "place" | "pan";
+type Mode = "trace" | "calibrate" | "place" | "pan" | "comment";
 
 interface FloorplanCanvasProps {
   roomName: string;
@@ -14,6 +14,7 @@ interface FloorplanCanvasProps {
   scalePxPerUnit: number;
   unit: Unit;
   furniture: Furniture[];
+  comments: Comment[];
   selectedFurnitureId: string | null;
   imageUrl: string | null;
   mode: Mode;
@@ -21,6 +22,7 @@ interface FloorplanCanvasProps {
   onCalibrate: (pixelDistance: number, realLength: number) => void;
   onFurnitureChange: (id: string, patch: Partial<Furniture>) => void;
   onSelectFurniture: (id: string | null) => void;
+  onAddComment: (point: Point) => void;
 }
 
 export interface FloorplanCanvasHandle {
@@ -38,6 +40,38 @@ function FurnitureGlyph({ item, scalePxPerUnit }: { item: Furniture; scalePxPerU
   const dPx = item.depth / (scalePxPerUnit || 1);
   const x = -wPx / 2;
   const y = -dPx / 2;
+
+  if (item.kind === "wall") {
+    return <rect x={x} y={y} width={wPx} height={dPx} fill="var(--color-line)" />;
+  }
+
+  if (item.kind === "door") {
+    const hingeX = x;
+    const r = wPx;
+    return (
+      <>
+        <rect x={x} y={y} width={wPx} height={Math.max(dPx, 2)} fill="var(--color-line-soft)" />
+        <path
+          d={`M ${hingeX} 0 A ${r} ${r} 0 0 1 ${hingeX + r} ${-r}`}
+          fill="none"
+          stroke="var(--color-line-soft)"
+          strokeWidth="1"
+          strokeDasharray="3 2"
+          opacity="0.6"
+        />
+        <line x1={hingeX} y1={0} x2={hingeX + r} y2={-r} stroke="var(--color-line-soft)" strokeWidth="1.2" opacity="0.85" />
+      </>
+    );
+  }
+
+  if (item.kind === "reader") {
+    return (
+      <>
+        <rect x={x} y={y} width={wPx} height={dPx} rx={1.5} fill="var(--color-surface-alt)" stroke="var(--color-accent)" strokeWidth="1.2" />
+        <circle cx="0" cy="0" r={Math.min(wPx, dPx) * 0.22} fill="var(--color-accent)" />
+      </>
+    );
+  }
 
   if (item.kind === "screen") {
     const bezel = Math.min(dPx * 0.18, 6);
@@ -93,6 +127,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     scalePxPerUnit,
     unit,
     furniture,
+    comments,
     selectedFurnitureId,
     imageUrl,
     mode,
@@ -100,6 +135,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     onCalibrate,
     onFurnitureChange,
     onSelectFurniture,
+    onAddComment,
   },
   ref,
 ) {
@@ -113,10 +149,14 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
   const panState = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
 
+  const segments = polygonPerimeterSegments(outline);
+  const totalPerimeterPx = segments.reduce((sum, seg) => sum + seg.length, 0);
+
   useImperativeHandle(ref, () => ({
     exportPng: () => {
       if (svgRef.current) {
-        exportSvgAsPng(svgRef.current, VIEW_W, VIEW_H, { roomName, unit, scalePxPerUnit });
+        const perimeterCm = scalePxPerUnit ? pxToReal(totalPerimeterPx, scalePxPerUnit) : undefined;
+        exportSvgAsPng(svgRef.current, VIEW_W, VIEW_H, { roomName, unit, scalePxPerUnit, perimeterCm });
       }
     },
   }));
@@ -140,6 +180,10 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
 
   function handleSvgClick(e: React.MouseEvent) {
     if (mode === "pan") return;
+    if (mode === "comment") {
+      onAddComment(toSvgPoint(e));
+      return;
+    }
     const p = snapToGrid(toSvgPoint(e));
     if (mode === "trace") {
       onOutlineChange([...outline, p]);
@@ -210,7 +254,6 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z - e.deltaY * 0.001)));
   }
 
-  const segments = polygonPerimeterSegments(outline);
   const realWidthPx = scalePxPerUnit ? pxToReal(VIEW_W, scalePxPerUnit) : null;
 
   return (
@@ -229,7 +272,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
           ref={svgRef}
           viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
           className="floorplan-canvas__svg"
-          style={{ width: VIEW_W * zoom, height: VIEW_H * zoom }}
+          style={{ width: VIEW_W * zoom, height: VIEW_H * zoom, cursor: mode === "comment" ? "crosshair" : undefined }}
           onClick={handleSvgClick}
           onMouseLeave={() => setCursorPos(null)}
         >
@@ -331,6 +374,22 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
               </g>
             );
           })}
+
+          {comments.map((c, i) => (
+            <g
+              key={c.id}
+              transform={`translate(${c.x} ${c.y})`}
+              className="floorplan-canvas__comment-pin"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <title>{`${c.author ? c.author + ": " : ""}${c.text}`}</title>
+              <circle r="11" fill={c.resolved ? "var(--color-line-soft)" : "var(--color-accent)"} stroke="var(--color-paper)" strokeWidth="2" />
+              <text textAnchor="middle" dy="4" fontSize="11" fill="var(--color-paper)" className="mono">
+                {i + 1}
+              </text>
+            </g>
+          ))}
         </svg>
       </div>
 
@@ -344,6 +403,11 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
           <span>X — · Y —</span>
         )}
         {realWidthPx && <span>VIEW {formatLength(realWidthPx, unit)} WIDE</span>}
+        {outline.length > 1 && (
+          <span>
+            PERIMETER {scalePxPerUnit ? formatLength(pxToReal(totalPerimeterPx, scalePxPerUnit), unit) : `${totalPerimeterPx.toFixed(0)} px`}
+          </span>
+        )}
       </div>
 
       <div className="floorplan-canvas__zoom-controls">

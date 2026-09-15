@@ -3,22 +3,34 @@ import "./App.css";
 import Header from "./components/Header";
 import RoomList from "./components/RoomList";
 import FurniturePanel from "./components/FurniturePanel";
+import CommentsPanel from "./components/CommentsPanel";
 import FloorplanCanvas, { type FloorplanCanvasHandle } from "./components/FloorplanCanvas";
 import UnitsToggle from "./components/UnitsToggle";
 import DraggablePanel from "./components/DraggablePanel";
-import type { Room, Furniture, FurniturePreset } from "./lib/types";
+import type { Comment, Room, Furniture, FurniturePreset } from "./lib/types";
 import { FURNITURE_PRESETS } from "./lib/types";
+import type { Point } from "./lib/geometry";
 import type { Unit } from "./lib/units";
 import { computeScale } from "./lib/geometry";
-import { createRoom as apiCreateRoom, deleteRoom, listRooms, saveRoom } from "./lib/api";
+import {
+  createComment,
+  createRoom as apiCreateRoom,
+  deleteComment,
+  deleteRoom,
+  listComments,
+  listRooms,
+  saveRoom,
+  setCommentResolved,
+} from "./lib/api";
 
-type Mode = "trace" | "calibrate" | "place" | "pan";
+type Mode = "trace" | "calibrate" | "place" | "pan" | "comment";
 
 const MODE_HELP: Record<Mode, string> = {
   trace: "Click points on the canvas to draw the room's wall outline — points snap to the grid. Click near the first point to close the shape.",
   calibrate: "Click two points on a known wall segment, then enter its real-world length — or use \"Grid = 1m\" to set the scale from the grid directly.",
   place: "Drag items around the canvas. Click one to select it, then use the rotate controls or the side panel to resize it.",
   pan: "Click and drag anywhere on the canvas to move around. Nothing is added or changed while panning.",
+  comment: "Click anywhere on the canvas to leave a comment pin for reviewers. Resolve or delete comments from the panel.",
 };
 
 const PRESETS_STORAGE_KEY = "floorplan-planner:presets";
@@ -42,7 +54,8 @@ export default function App() {
   const [selectedFurnitureId, setSelectedFurnitureId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [panelOrder, setPanelOrder] = useState<("rooms" | "items")[]>(["rooms", "items"]);
+  const [panelOrder, setPanelOrder] = useState<("rooms" | "items" | "comments")[]>(["rooms", "items", "comments"]);
+  const [comments, setComments] = useState<Comment[]>([]);
   const [presets, setPresets] = useState<FurniturePreset[]>(loadPresets);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didInit = useRef(false);
@@ -78,6 +91,16 @@ export default function App() {
       // ignore write failures (private browsing, quota, etc.)
     }
   }, [presets]);
+
+  useEffect(() => {
+    if (!activeRoomId) {
+      setComments([]);
+      return;
+    }
+    listComments(activeRoomId)
+      .then(setComments)
+      .catch(() => setComments([]));
+  }, [activeRoomId]);
 
   const activeRoom = rooms.find((r) => r.id === activeRoomId) ?? null;
 
@@ -210,8 +233,38 @@ export default function App() {
     updateActiveRoom({ unit });
   }
 
-  function bringToFront(panel: "rooms" | "items") {
-    setPanelOrder((prev) => (prev[1] === panel ? prev : [prev[1], panel]));
+  function bringToFront(panel: "rooms" | "items" | "comments") {
+    setPanelOrder((prev) => [...prev.filter((p) => p !== panel), panel]);
+  }
+
+  async function handleAddComment(point: Point) {
+    if (!activeRoom) return;
+    const text = window.prompt("Add a comment:");
+    if (!text) return;
+    try {
+      const comment = await createComment(activeRoom.id, point.x, point.y, text);
+      setComments((prev) => [...prev, comment]);
+    } catch {
+      setSyncError("Failed to save the comment to the server.");
+    }
+  }
+
+  async function handleResolveComment(id: string, resolved: boolean) {
+    setComments((prev) => prev.map((c) => (c.id === id ? { ...c, resolved } : c)));
+    try {
+      await setCommentResolved(id, resolved);
+    } catch {
+      setSyncError("Failed to update the comment on the server.");
+    }
+  }
+
+  async function handleDeleteComment(id: string) {
+    setComments((prev) => prev.filter((c) => c.id !== id));
+    try {
+      await deleteComment(id);
+    } catch {
+      setSyncError("Failed to delete the comment on the server.");
+    }
   }
 
   function handleUploadClick() {
@@ -267,6 +320,9 @@ export default function App() {
             <button className={mode === "pan" ? "active" : ""} onClick={() => setMode("pan")} title={MODE_HELP.pan}>
               Pan canvas
             </button>
+            <button className={mode === "comment" ? "active" : ""} onClick={() => setMode("comment")} title={MODE_HELP.comment}>
+              Comment
+            </button>
             {mode === "trace" && activeRoom.outline.length > 0 && (
               <>
                 <span className="mode-bar__divider" />
@@ -306,6 +362,7 @@ export default function App() {
             scalePxPerUnit={activeRoom.scalePxPerUnit}
             unit={activeRoom.unit}
             furniture={activeRoom.furniture}
+            comments={comments}
             selectedFurnitureId={selectedFurnitureId}
             imageUrl={activeRoom.floorplanImageUrl}
             mode={mode}
@@ -313,6 +370,7 @@ export default function App() {
             onCalibrate={handleCalibrate}
             onFurnitureChange={handleUpdateFurniture}
             onSelectFurniture={setSelectedFurnitureId}
+            onAddComment={handleAddComment}
           />
         ) : (
           <div className="app-main__empty">Create a room to get started.</div>
@@ -356,6 +414,19 @@ export default function App() {
               onDelete={handleDeleteFurniture}
               onDuplicate={handleDuplicateFurniture}
             />
+          </DraggablePanel>
+        )}
+
+        {activeRoom && (
+          <DraggablePanel
+            title={`COMMENTS${comments.filter((c) => !c.resolved).length > 0 ? ` (${comments.filter((c) => !c.resolved).length})` : ""}`}
+            defaultPosition={{ x: 16, y: Math.max(180, window.innerHeight - 340) }}
+            width={260}
+            height={300}
+            zIndex={panelOrder.indexOf("comments") + 10}
+            onFocus={() => bringToFront("comments")}
+          >
+            <CommentsPanel comments={comments} onResolve={handleResolveComment} onDelete={handleDeleteComment} />
           </DraggablePanel>
         )}
       </div>

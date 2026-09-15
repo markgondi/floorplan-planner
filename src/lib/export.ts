@@ -5,6 +5,7 @@ interface ExportMeta {
   roomName: string;
   unit: Unit;
   scalePxPerUnit: number;
+  perimeterCm?: number;
 }
 
 const CSS_VAR_PATTERN = /var\((--[a-zA-Z0-9-]+)\)/g;
@@ -64,7 +65,8 @@ export function exportSvgAsPng(svg: SVGSVGElement, viewW: number, viewH: number,
     const scaleStr = meta.scalePxPerUnit
       ? `SCALE 1PX = ${formatLength(meta.scalePxPerUnit, meta.unit, 3)}`
       : "SCALE NOT SET";
-    const rightText = `${scaleStr}   |   ${dateStr}`;
+    const perimeterStr = meta.perimeterCm ? `PERIMETER ${formatLength(meta.perimeterCm, meta.unit)}` : null;
+    const rightText = [scaleStr, perimeterStr, dateStr].filter(Boolean).join("   |   ");
     const textWidth = ctx.measureText(rightText).width;
     ctx.fillText(rightText, canvas.width - textWidth - 20 * scale, textY);
 

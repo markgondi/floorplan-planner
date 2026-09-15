@@ -25,3 +25,16 @@ CREATE TABLE IF NOT EXISTS furniture (
 );
 
 CREATE INDEX IF NOT EXISTS idx_furniture_room ON furniture(room_id);
+
+CREATE TABLE IF NOT EXISTS comments (
+  id TEXT PRIMARY KEY,
+  room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  x REAL NOT NULL,
+  y REAL NOT NULL,
+  author TEXT,
+  text TEXT NOT NULL,
+  resolved INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_comments_room ON comments(room_id);
