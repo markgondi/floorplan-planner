@@ -1,5 +1,5 @@
+import type { Handler } from "@netlify/functions";
 import { createClient } from "@libsql/client";
-import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 const db = createClient({
   url: process.env.TURSO_DATABASE_URL!,
@@ -29,14 +29,21 @@ function rowToRoom(row: any, furnitureRows: any[]) {
   };
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === "GET") {
-    const id = req.query.id as string | undefined;
+const json = (statusCode: number, body: unknown) => ({
+  statusCode,
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
+
+export const handler: Handler = async (event) => {
+  const id = event.queryStringParameters?.id;
+
+  if (event.httpMethod === "GET") {
     if (id) {
       const room = await db.execute({ sql: "SELECT * FROM rooms WHERE id = ?", args: [id] });
-      if (room.rows.length === 0) return res.status(404).json({ error: "Not found" });
+      if (room.rows.length === 0) return json(404, { error: "Not found" });
       const furniture = await db.execute({ sql: "SELECT * FROM furniture WHERE room_id = ?", args: [id] });
-      return res.status(200).json(rowToRoom(room.rows[0], furniture.rows as any[]));
+      return json(200, rowToRoom(room.rows[0], furniture.rows as any[]));
     }
     const rooms = await db.execute("SELECT * FROM rooms ORDER BY updated_at DESC");
     const result = [];
@@ -44,21 +51,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const furniture = await db.execute({ sql: "SELECT * FROM furniture WHERE room_id = ?", args: [row.id] });
       result.push(rowToRoom(row, furniture.rows as any[]));
     }
-    return res.status(200).json(result);
+    return json(200, result);
   }
 
-  if (req.method === "POST") {
-    const { name } = req.body;
-    const id = crypto.randomUUID();
-    await db.execute({
-      sql: "INSERT INTO rooms (id, name) VALUES (?, ?)",
-      args: [id, name],
-    });
-    return res.status(201).json(rowToRoom({ id, name, scale_px_per_unit: null, unit: "cm", floorplan_image_url: null, outline_json: null }, []));
+  if (event.httpMethod === "POST") {
+    const { name } = JSON.parse(event.body ?? "{}");
+    const newId = crypto.randomUUID();
+    await db.execute({ sql: "INSERT INTO rooms (id, name) VALUES (?, ?)", args: [newId, name] });
+    return json(
+      201,
+      rowToRoom(
+        { id: newId, name, scale_px_per_unit: null, unit: "cm", floorplan_image_url: null, outline_json: null },
+        [],
+      ),
+    );
   }
 
-  if (req.method === "PUT") {
-    const room = req.body;
+  if (event.httpMethod === "PUT") {
+    const room = JSON.parse(event.body ?? "{}");
     await db.execute({
       sql: `UPDATE rooms SET name = ?, scale_px_per_unit = ?, unit = ?, floorplan_image_url = ?, outline_json = ?, updated_at = datetime('now') WHERE id = ?`,
       args: [room.name, room.scalePxPerUnit, room.unit, room.floorplanImageUrl, JSON.stringify(room.outline), room.id],
@@ -70,9 +80,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         args: [f.id, room.id, f.label, f.shape, f.width, f.depth, f.x, f.y, f.rotation, f.color],
       });
     }
-    return res.status(200).json(room);
+    return json(200, room);
   }
 
-  res.setHeader("Allow", ["GET", "POST", "PUT"]);
-  return res.status(405).end();
-}
+  return { statusCode: 405, headers: { Allow: "GET, POST, PUT" }, body: "Method Not Allowed" };
+};

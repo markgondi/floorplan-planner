@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import Header from "./components/Header";
 import RoomList from "./components/RoomList";
@@ -9,34 +9,68 @@ import PrintView from "./components/PrintView";
 import type { Room, Furniture } from "./lib/types";
 import type { Unit } from "./lib/units";
 import { computeScale } from "./lib/geometry";
+import { createRoom as apiCreateRoom, listRooms, saveRoom } from "./lib/api";
 
 type Mode = "trace" | "calibrate" | "place";
 
-function emptyRoom(id: string, name: string): Room {
-  return { id, name, scalePxPerUnit: 0, unit: "cm", floorplanImageUrl: null, outline: [], furniture: [] };
-}
-
 export default function App() {
-  const [rooms, setRooms] = useState<Room[]>([emptyRoom(crypto.randomUUID(), "Living Room")]);
-  const [activeRoomId, setActiveRoomId] = useState<string | null>(rooms[0]?.id ?? null);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("trace");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [selectedFurnitureId, setSelectedFurnitureId] = useState<string | null>(null);
   const [showPrint, setShowPrint] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didInit = useRef(false);
+
+  useEffect(() => {
+    if (didInit.current) return;
+    didInit.current = true;
+    (async () => {
+      try {
+        const loaded = await listRooms();
+        if (loaded.length > 0) {
+          setRooms(loaded);
+          setActiveRoomId(loaded[0].id);
+        } else {
+          const room = await apiCreateRoom("Living Room");
+          setRooms([room]);
+          setActiveRoomId(room.id);
+        }
+      } catch (err) {
+        setSyncError("Could not reach the server — check TURSO_DATABASE_URL / TURSO_AUTH_TOKEN and that netlify dev is running.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   const activeRoom = rooms.find((r) => r.id === activeRoomId) ?? null;
 
   function updateActiveRoom(patch: Partial<Room>) {
     if (!activeRoomId) return;
     setRooms((prev) => prev.map((r) => (r.id === activeRoomId ? { ...r, ...patch } : r)));
+
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const updated = rooms.find((r) => r.id === activeRoomId);
+      const next = updated ? { ...updated, ...patch } : null;
+      if (next) saveRoom(next).catch(() => setSyncError("Failed to save changes to the server."));
+    }, 500);
   }
 
-  function handleCreateRoom() {
+  async function handleCreateRoom() {
     const name = window.prompt("Room name:", "New Room");
     if (!name) return;
-    const room = emptyRoom(crypto.randomUUID(), name);
-    setRooms((prev) => [...prev, room]);
-    setActiveRoomId(room.id);
+    try {
+      const room = await apiCreateRoom(name);
+      setRooms((prev) => [...prev, room]);
+      setActiveRoomId(room.id);
+    } catch {
+      setSyncError("Failed to create room on the server.");
+    }
   }
 
   function handleCalibrate(pixelDistance: number, realLength: number) {
@@ -86,9 +120,19 @@ export default function App() {
     updateActiveRoom({ unit });
   }
 
+  if (loading) {
+    return (
+      <div className="app-shell" data-theme={theme}>
+        <Header theme={theme} onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))} />
+        <div className="app-main__empty">Loading rooms…</div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell" data-theme={theme}>
       <Header theme={theme} onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))} />
+      {syncError && <div className="sync-banner">{syncError}</div>}
       <div className="app-body">
         <RoomList rooms={rooms} activeRoomId={activeRoomId} onSelect={setActiveRoomId} onCreate={handleCreateRoom} />
 
