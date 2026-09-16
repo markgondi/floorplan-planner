@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import type { Point } from "../lib/geometry";
-import { distance, mergeCollinearWalls, polygonPerimeterSegments, pxToReal, snapAngle } from "../lib/geometry";
+import type { Point, WallRun } from "../lib/geometry";
+import { distance, mergeCollinearWalls, pointInPolygon, polygonPerimeterSegments, pxToReal, snapAngle } from "../lib/geometry";
 import type { Comment, Furniture } from "../lib/types";
 import { itemColor, itemOrigin } from "../lib/types";
 import type { Unit } from "../lib/units";
@@ -41,6 +41,14 @@ const VIEW_H = 1100;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 const GRID_MINOR = 20;
+const WALL_DIM_SIZE = 10;
+// Gap between a wall's centre line and the near edge of its length label — clears the
+// 6px selected-wall highlight with room to spare.
+const WALL_DIM_CLEARANCE = 7;
+// Least room to leave between a length label and any other wall line.
+const WALL_DIM_MIN_GAP = 5;
+// Letter-spacing of wall lengths, as a fraction of font size.
+const WALL_DIM_TRACKING = 0.04;
 
 // Every item is drawn the same way — the item's own colour as a flat fill, one hairline
 // outline weight — with only the interior detail changing per kind. Keeps the plan reading
@@ -192,6 +200,77 @@ function readableAngle(deg: number): number {
   if (a >= 270) return a - 360;
   if (a >= 90) return a - 180;
   return a;
+}
+
+// Clearance between segment a–b and the box [-hw, hw] × [-hh, hh]; 0 when they touch or cross.
+function segmentBoxGap(a: Point, b: Point, hw: number, hh: number): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  // Liang–Barsky clip: if any part of the segment survives, it passes through the box.
+  let t0 = 0;
+  let t1 = 1;
+  let crosses = true;
+  for (const [p, q] of [[-dx, a.x + hw], [dx, hw - a.x], [-dy, a.y + hh], [dy, hh - a.y]]) {
+    if (p === 0) {
+      if (q < 0) crosses = false;
+    } else if (p < 0) {
+      t0 = Math.max(t0, q / p);
+    } else {
+      t1 = Math.min(t1, q / p);
+    }
+    if (!crosses || t0 > t1) {
+      crosses = false;
+      break;
+    }
+  }
+  if (crosses) return 0;
+  const toBox = (p: Point) => Math.hypot(Math.max(Math.abs(p.x) - hw, 0), Math.max(Math.abs(p.y) - hh, 0));
+  const toSegment = (x: number, y: number) => {
+    const t = Math.min(1, Math.max(0, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+    return Math.hypot(x - a.x - t * dx, y - a.y - t * dy);
+  };
+  return Math.min(toBox(a), toBox(b), toSegment(-hw, -hh), toSegment(hw, -hh), toSegment(-hw, hh), toSegment(hw, hh));
+}
+
+// Where a wall's length label goes: outside the room, parallel to the wall and clear of its
+// line, like a dimension on a drawing. A label longer than a short wall would run into the
+// neighbouring walls, so it slides along its wall — then steps further out — until every
+// wall line is at least WALL_DIM_MIN_GAP away.
+function placeWallLabel(run: WallRun, outline: Point[], text: string) {
+  const len = run.length || 1;
+  const ux = (run.to.x - run.from.x) / len;
+  const uy = (run.to.y - run.from.y) / len;
+  const midX = (run.from.x + run.to.x) / 2;
+  const midY = (run.from.y + run.to.y) / 2;
+  let nx = -uy;
+  let ny = ux;
+  if (pointInPolygon({ x: midX + nx * 3, y: midY + ny * 3 }, outline)) {
+    nx = -nx;
+    ny = -ny;
+  }
+
+  const angle = readableAngle((Math.atan2(uy, ux) * 180) / Math.PI);
+  const cos = Math.cos((angle * Math.PI) / 180);
+  const sin = Math.sin((angle * Math.PI) / 180);
+  const hw = (text.length * (MONO_CHAR_WIDTH + WALL_DIM_TRACKING) * WALL_DIM_SIZE) / 2 + 1;
+  const hh = WALL_DIM_SIZE / 2;
+  const walls = polygonPerimeterSegments(outline);
+  const clearance = (x: number, y: number) => {
+    const local = (p: Point) => ({ x: (p.x - x) * cos + (p.y - y) * sin, y: -(p.x - x) * sin + (p.y - y) * cos });
+    return Math.min(...walls.map((w) => segmentBoxGap(local(w.from), local(w.to), hw, hh)));
+  };
+
+  const base = WALL_DIM_CLEARANCE + hh;
+  for (const out of [0, 8, 16]) {
+    for (let step = 0; step * 3 <= hw; step++) {
+      for (const along of step === 0 ? [0] : [step * 3, -step * 3]) {
+        const x = midX + nx * (base + out) + ux * along;
+        const y = midY + ny * (base + out) + uy * along;
+        if (clearance(x, y) >= WALL_DIM_MIN_GAP) return { x, y, angle };
+      }
+    }
+  }
+  return { x: midX + nx * base, y: midY + ny * base, angle };
 }
 
 // Where an item's name sits and which way it runs: centred on the item and laid along its
@@ -498,18 +577,25 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
 
           {outline.length > 1 &&
             wallRuns.map((run, i) => {
-              const dx = run.to.x - run.from.x;
-              const dy = run.to.y - run.from.y;
-              const len = Math.hypot(dx, dy) || 1;
-              const nx = -dy / len;
-              const ny = dx / len;
-              const offset = 16;
-              const midX = (run.from.x + run.to.x) / 2 + nx * offset;
-              const midY = (run.from.y + run.to.y) / 2 + ny * offset;
-              const realLength = scalePxPerUnit ? pxToReal(run.length, scalePxPerUnit) : run.length;
+              const text = scalePxPerUnit ? formatLength(pxToReal(run.length, scalePxPerUnit), unit) : `${run.length.toFixed(0)} px`;
+              const place = placeWallLabel(run, outline, text);
               return (
-                <text key={i} x={midX} y={midY} className="mono floorplan-canvas__dim-label" textAnchor="middle">
-                  {scalePxPerUnit ? formatLength(realLength, unit) : `${run.length.toFixed(0)} px`}
+                <text
+                  key={i}
+                  transform={`translate(${place.x} ${place.y}) rotate(${place.angle})`}
+                  className="mono floorplan-canvas__dim-label"
+                  fontFamily="monospace"
+                  fontSize={WALL_DIM_SIZE}
+                  letterSpacing={`${WALL_DIM_TRACKING}em`}
+                  fill="var(--color-line-soft)"
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  paintOrder="stroke"
+                  stroke="var(--color-canvas)"
+                  strokeWidth={3}
+                  strokeLinejoin="round"
+                >
+                  {text}
                 </text>
               );
             })}
