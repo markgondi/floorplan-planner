@@ -2,9 +2,9 @@ import { useRef, useState } from "react";
 import type { WallRun } from "../lib/geometry";
 import { distanceFromWallLine, pointOnWall, projectAlongWall, pxToReal, signedDistanceFromWall } from "../lib/geometry";
 import type { Furniture } from "../lib/types";
-import { KIND_COLOR, itemOrigin } from "../lib/types";
+import { itemColor, itemOrigin } from "../lib/types";
 import type { Unit } from "../lib/units";
-import { formatLength } from "../lib/units";
+import { formatDimensions, formatLength } from "../lib/units";
 
 interface SideViewProps {
   furniture: Furniture[];
@@ -215,7 +215,7 @@ export default function SideView({
                 style={{ cursor: "grab" }}
               >
                 <title>
-                  {`${item.label} — ${formatLength(item.width, unit)} wide x ${formatLength(item.height, unit)} tall, ` +
+                  {`${item.label} — L × D × H ${formatDimensions([item.width, item.depth, item.height], unit)}, ` +
                     `${formatLength(item.elevation, unit)} off the floor. Drag to move along the wall or change its height.`}
                 </title>
                 <rect
@@ -224,7 +224,7 @@ export default function SideView({
                   width={wPx}
                   height={hPx}
                   rx={2}
-                  fill={KIND_COLOR[item.kind]}
+                  fill={itemColor(item)}
                   fillOpacity={isWall ? 0.4 : 0.8}
                   stroke={isSelected ? "var(--color-accent)" : "var(--color-line)"}
                   strokeWidth={isSelected ? 3 : 1.2}

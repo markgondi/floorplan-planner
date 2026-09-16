@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type { Furniture, FurniturePreset } from "../lib/types";
-import { KIND_COLOR, KIND_LABEL } from "../lib/types";
+import { ITEM_PALETTE, KIND_LABEL, itemColor } from "../lib/types";
 import type { Unit } from "../lib/units";
-import { fromCm, toCm } from "../lib/units";
+import DimensionInput from "./DimensionInput";
 import { snapAngle } from "../lib/geometry";
 
 interface FurniturePanelProps {
@@ -16,6 +16,7 @@ interface FurniturePanelProps {
   onUpdate: (id: string, patch: Partial<Furniture>) => void;
   onDelete: (id: string) => void;
   onDuplicate: (id: string) => void;
+  onApplyColorToName: (label: string, color: string) => void;
 }
 
 export default function FurniturePanel({
@@ -29,8 +30,10 @@ export default function FurniturePanel({
   onUpdate,
   onDelete,
   onDuplicate,
+  onApplyColorToName,
 }: FurniturePanelProps) {
   const [tab, setTab] = useState<"add" | "placed">("add");
+  const sameNameCount = (item: Furniture) => furniture.filter((f) => f.label.trim() === item.label.trim()).length;
 
   return (
     <div className="furniture-panel">
@@ -54,28 +57,16 @@ export default function FurniturePanel({
               />
               <div className="furniture-panel__preset-dims mono">
                 <label>
-                  <span>W</span>
-                  <input
-                    type="number"
-                    value={fromCm(preset.width, unit).toFixed(1)}
-                    onChange={(e) => onUpdatePreset(preset.id, { width: toCm(Number(e.target.value), unit) })}
-                  />
+                  <span>L</span>
+                  <DimensionInput valueCm={preset.width} unit={unit} onChange={(v) => onUpdatePreset(preset.id, { width: v })} />
                 </label>
                 <label>
                   <span>D</span>
-                  <input
-                    type="number"
-                    value={fromCm(preset.depth, unit).toFixed(1)}
-                    onChange={(e) => onUpdatePreset(preset.id, { depth: toCm(Number(e.target.value), unit) })}
-                  />
+                  <DimensionInput valueCm={preset.depth} unit={unit} onChange={(v) => onUpdatePreset(preset.id, { depth: v })} />
                 </label>
                 <label>
                   <span>H</span>
-                  <input
-                    type="number"
-                    value={fromCm(preset.height, unit).toFixed(1)}
-                    onChange={(e) => onUpdatePreset(preset.id, { height: toCm(Number(e.target.value), unit) })}
-                  />
+                  <DimensionInput valueCm={preset.height} unit={unit} onChange={(v) => onUpdatePreset(preset.id, { height: v })} />
                 </label>
               </div>
               <button
@@ -98,10 +89,7 @@ export default function FurniturePanel({
               className={item.id === selectedId ? "furniture-panel__item furniture-panel__item--active" : "furniture-panel__item"}
               onClick={() => onSelect(item.id)}
             >
-              <div className="furniture-panel__kind mono">
-                <span className="furniture-panel__swatch" style={{ background: KIND_COLOR[item.kind] }} />
-                {KIND_LABEL[item.kind]}
-              </div>
+              {item.kind !== "generic" && <div className="furniture-panel__kind mono">{KIND_LABEL[item.kind]}</div>}
               <input
                 value={item.label}
                 onChange={(e) => onUpdate(item.id, { label: e.target.value })}
@@ -109,33 +97,18 @@ export default function FurniturePanel({
               />
               <div className="furniture-panel__dims mono">
                 <label>
-                  <span>W</span>
-                  <input
-                    type="number"
-                    value={fromCm(item.width, unit).toFixed(1)}
-                    onChange={(e) => onUpdate(item.id, { width: toCm(Number(e.target.value), unit) })}
-                    onClick={(e) => e.stopPropagation()}
-                  />
+                  <span>L</span>
+                  <DimensionInput valueCm={item.width} unit={unit} onChange={(v) => onUpdate(item.id, { width: v })} onClick={(e) => e.stopPropagation()} />
                   <span className="furniture-panel__unit">{unit}</span>
                 </label>
                 <label>
                   <span>D</span>
-                  <input
-                    type="number"
-                    value={fromCm(item.depth, unit).toFixed(1)}
-                    onChange={(e) => onUpdate(item.id, { depth: toCm(Number(e.target.value), unit) })}
-                    onClick={(e) => e.stopPropagation()}
-                  />
+                  <DimensionInput valueCm={item.depth} unit={unit} onChange={(v) => onUpdate(item.id, { depth: v })} onClick={(e) => e.stopPropagation()} />
                   <span className="furniture-panel__unit">{unit}</span>
                 </label>
                 <label>
                   <span>H</span>
-                  <input
-                    type="number"
-                    value={fromCm(item.height, unit).toFixed(1)}
-                    onChange={(e) => onUpdate(item.id, { height: toCm(Number(e.target.value), unit) })}
-                    onClick={(e) => e.stopPropagation()}
-                  />
+                  <DimensionInput valueCm={item.height} unit={unit} onChange={(v) => onUpdate(item.id, { height: v })} onClick={(e) => e.stopPropagation()} />
                   <span className="furniture-panel__unit">{unit}</span>
                 </label>
               </div>
@@ -170,6 +143,33 @@ export default function FurniturePanel({
                 >
                   0°
                 </button>
+              </div>
+              <div className="furniture-panel__colors">
+                {ITEM_PALETTE.map((c) => (
+                  <button
+                    key={c.value}
+                    className={itemColor(item) === c.value ? "furniture-panel__color furniture-panel__color--active" : "furniture-panel__color"}
+                    style={{ background: c.value }}
+                    title={c.name}
+                    aria-label={`Colour ${c.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdate(item.id, { color: c.value });
+                    }}
+                  />
+                ))}
+                {sameNameCount(item) > 1 && (
+                  <button
+                    className="furniture-panel__apply-all"
+                    title={`Give every item named "${item.label}" this colour`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onApplyColorToName(item.label, itemColor(item));
+                    }}
+                  >
+                    Apply to all {sameNameCount(item)}
+                  </button>
+                )}
               </div>
               <div className="furniture-panel__actions">
                 <button onClick={(e) => { e.stopPropagation(); onDuplicate(item.id); }}>Duplicate</button>

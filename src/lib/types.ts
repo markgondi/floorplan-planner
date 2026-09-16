@@ -54,9 +54,30 @@ export const KIND_LABEL: Record<FurnitureKind, string> = {
   generic: "Custom",
 };
 
-// The preset type an item was placed from — or null when its name already says so,
-// so an unrenamed "Door" doesn't get labelled "Door / DOOR".
+// Colours people can give an item, chosen to read well on both the dark and light canvas.
+export const ITEM_PALETTE: { name: string; value: string }[] = [
+  { name: "Slate", value: "#5f7c99" },
+  { name: "Teal", value: "#4f8a84" },
+  { name: "Sage", value: "#7c9a6c" },
+  { name: "Sand", value: "#b59b6d" },
+  { name: "Terracotta", value: "#c47f5e" },
+  { name: "Plum", value: "#8d6c92" },
+  { name: "Steel", value: "#7d8288" },
+  { name: "Charcoal", value: "#4b5057" },
+];
+
+// An item's fill: the palette colour chosen for it, otherwise its kind's default. Colours
+// saved by older versions of the app (outside the palette) are ignored rather than revived.
+export function itemColor(item: Pick<Furniture, "kind" | "color">): string {
+  const chosen = item.color?.toLowerCase();
+  return chosen && ITEM_PALETTE.some((p) => p.value === chosen) ? chosen : KIND_COLOR[item.kind];
+}
+
+// The preset type an item was placed from — or null when its name already says so (an
+// unrenamed "Door" doesn't need "DOOR"), or when it came from Custom Item, where the tag
+// says nothing useful.
 export function itemOrigin(item: Pick<Furniture, "kind" | "label">): string | null {
+  if (item.kind === "generic") return null;
   const name = item.label.trim().toLowerCase();
   const type = KIND_LABEL[item.kind];
   const preset = FURNITURE_PRESETS.find((p) => p.kind === item.kind);

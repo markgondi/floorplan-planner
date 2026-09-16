@@ -1093,12 +1093,50 @@
   color: var(--color-line-soft);
 }
 
-.furniture-panel__swatch {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
-  flex-shrink: 0;
+.furniture-panel__colors {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.furniture-panel__color {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: none;
+  transition: transform 0.14s var(--ease), box-shadow 0.14s ease;
+}
+
+.furniture-panel__color:hover {
+  transform: scale(1.12);
+  box-shadow: none;
+}
+
+.furniture-panel__color--active {
+  box-shadow: 0 0 0 2px var(--color-paper), 0 0 0 3.5px var(--color-accent);
+}
+
+.furniture-panel__color--active:hover {
+  box-shadow: 0 0 0 2px var(--color-paper), 0 0 0 3.5px var(--color-accent);
+}
+
+.furniture-panel__apply-all {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 2px 8px;
+  background: transparent;
+  border-color: var(--color-hairline);
+  color: var(--color-line-soft);
+}
+
+.furniture-panel__apply-all:hover {
+  color: var(--color-charcoal);
+  border-color: var(--color-accent-soft);
+  transform: none;
+  box-shadow: none;
 }
 
 .btn-ghost--active {

@@ -2,9 +2,9 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import type { Point } from "../lib/geometry";
 import { distance, mergeCollinearWalls, polygonPerimeterSegments, pxToReal, snapAngle } from "../lib/geometry";
 import type { Comment, Furniture } from "../lib/types";
-import { KIND_COLOR, itemOrigin } from "../lib/types";
+import { itemColor, itemOrigin } from "../lib/types";
 import type { Unit } from "../lib/units";
-import { formatLength } from "../lib/units";
+import { dimensionTokens, formatDimensions, formatLength } from "../lib/units";
 import { exportSvgAsPng } from "../lib/export";
 
 type Mode = "select" | "walls" | "scale" | "arrange" | "comment";
@@ -61,7 +61,7 @@ function FurnitureGlyph({ item, scalePxPerUnit }: { item: Furniture; scalePxPerU
       width={wPx}
       height={dPx}
       rx={radius}
-      fill={KIND_COLOR[item.kind]}
+      fill={itemColor(item)}
       fillOpacity={fillOpacity}
       stroke="var(--color-line)"
       strokeWidth={GLYPH_STROKE}
@@ -120,7 +120,7 @@ function FurnitureGlyph({ item, scalePxPerUnit }: { item: Furniture; scalePxPerU
           y={-leaf}
           width={thickness}
           height={leaf}
-          fill={KIND_COLOR[item.kind]}
+          fill={itemColor(item)}
           stroke="var(--color-line)"
           strokeWidth={GLYPH_STROKE}
         />
@@ -576,7 +576,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
                 style={{ cursor: mode === "arrange" ? "move" : mode === "select" ? "pointer" : "default" }}
                 filter="url(#dropShadow)"
               >
-                <title>{`${item.label} — ${formatLength(item.width, unit)} x ${formatLength(item.depth, unit)}`}</title>
+                <title>{`${item.label} — L × D × H ${formatDimensions([item.width, item.depth, item.height], unit)}`}</title>
                 <FurnitureGlyph item={item} scalePxPerUnit={scalePxPerUnit} />
                 {isSelected && (
                   <rect
@@ -611,8 +611,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
 
                 const dimsTokens = [
                   ...(origin ? [`${origin.toUpperCase()} ·`] : []),
-                  formatLength(item.width, unit),
-                  `× ${formatLength(item.depth, unit)}`,
+                  ...dimensionTokens([item.width, item.depth, item.height], unit),
                 ];
                 const gap = 2.5;
                 const dims = fitLines(dimsTokens, frame.length, frame.thickness - nameBlock - gap, Math.min(8.5, name.size * 0.85), 5.5);

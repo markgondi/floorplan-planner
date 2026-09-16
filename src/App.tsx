@@ -10,11 +10,12 @@ import UnitsToggle from "./components/UnitsToggle";
 import Sidebar from "./components/Sidebar";
 import ToolRail, { type Mode } from "./components/ToolRail";
 import StatusBar from "./components/StatusBar";
+import DimensionInput from "./components/DimensionInput";
 import type { Comment, Folder, Room, Furniture, FurniturePreset } from "./lib/types";
 import { FURNITURE_PRESETS } from "./lib/types";
 import type { Point } from "./lib/geometry";
 import type { Unit } from "./lib/units";
-import { formatLength, fromCm, toCm } from "./lib/units";
+import { formatDimensions, formatLength } from "./lib/units";
 import { computeScale, mergeCollinearWalls, polygonPerimeterSegments, pxToReal } from "./lib/geometry";
 import {
   createComment,
@@ -347,6 +348,14 @@ export default function App() {
     if (selectedFurnitureId === id) setSelectedFurnitureId(null);
   }
 
+  function handleApplyColorToName(label: string, color: string) {
+    if (!activeRoom) return;
+    const name = label.trim();
+    updateActiveRoom({
+      furniture: activeRoom.furniture.map((f) => (f.label.trim() === name ? { ...f, color } : f)),
+    });
+  }
+
   function handleDuplicateFurniture(id: string) {
     if (!activeRoom) return;
     const source = activeRoom.furniture.find((f) => f.id === id);
@@ -357,11 +366,6 @@ export default function App() {
 
   function handleUnitChange(unit: Unit) {
     updateActiveRoom({ unit });
-  }
-
-  function handleCeilingHeightChange(valueInCurrentUnit: number) {
-    if (!activeRoom) return;
-    updateActiveRoom({ ceilingHeight: toCm(valueInCurrentUnit, activeRoom.unit) });
   }
 
   async function handleAddComment(point: Point) {
@@ -493,10 +497,10 @@ export default function App() {
             {view === "side" && (
               <label className="field mono" title="Ceiling height for the Side view reference line">
                 <span>Ceiling</span>
-                <input
-                  type="number"
-                  value={fromCm(activeRoom.ceilingHeight, activeRoom.unit).toFixed(1)}
-                  onChange={(e) => handleCeilingHeightChange(Number(e.target.value))}
+                <DimensionInput
+                  valueCm={activeRoom.ceilingHeight}
+                  unit={activeRoom.unit}
+                  onChange={(ceilingHeight) => updateActiveRoom({ ceilingHeight })}
                 />
                 <span className="field__unit">{activeRoom.unit}</span>
               </label>
@@ -632,6 +636,7 @@ export default function App() {
                 onUpdate={handleUpdateFurniture}
                 onDelete={handleDeleteFurniture}
                 onDuplicate={handleDuplicateFurniture}
+                onApplyColorToName={handleApplyColorToName}
               />
             ) : (
               <CommentsPanel comments={comments} onResolve={handleResolveComment} onDelete={handleDeleteComment} />
@@ -651,7 +656,11 @@ export default function App() {
             ? pxToReal(perimeterPx, activeRoom.scalePxPerUnit)
             : null
         }
-        selectionLabel={selectedItem ? `${selectedItem.label} · ${formatLength(selectedItem.width, unit)} × ${formatLength(selectedItem.height, unit)}` : null}
+        selectionLabel={
+          selectedItem
+            ? `${selectedItem.label} · ${formatDimensions([selectedItem.width, selectedItem.depth, selectedItem.height], unit)}`
+            : null
+        }
         wallLabel={
           selectedWall && selectedWallIndex !== null && activeRoom?.scalePxPerUnit
             ? `${selectedWallIndex + 1} · ${formatLength(pxToReal(selectedWall.length, activeRoom.scalePxPerUnit), unit)}`

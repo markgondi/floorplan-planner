@@ -17,3 +17,16 @@ export function formatLength(valueCm: number, unit: Unit, precision = PRECISION[
   const converted = fromCm(valueCm, unit);
   return `${converted.toFixed(precision)}${SUFFIX[unit]}`;
 }
+
+// "1800 ×", "750 ×", "900 mm" — dimensions with the unit written once at the end, split
+// into pieces a label can wrap between.
+export function dimensionTokens(valuesCm: number[], unit: Unit): string[] {
+  return valuesCm.map((v, i) => {
+    const n = fromCm(v, unit).toFixed(PRECISION[unit]);
+    return i < valuesCm.length - 1 ? `${n} ×` : `${n}${SUFFIX[unit]}`;
+  });
+}
+
+export function formatDimensions(valuesCm: number[], unit: Unit): string {
+  return dimensionTokens(valuesCm, unit).join(" ");
+}
