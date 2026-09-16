@@ -45,6 +45,8 @@ interface FloorplanCanvasProps {
   wallStart: Point | null;
   onWallStartChange: (point: Point | null) => void;
   onDrawWall: (from: Point, to: Point) => void;
+  // Leave the Walls tool — the outline is closed or you're done placing walls.
+  onFinishDrawing: () => void;
   // Thickness (cm) new inner walls are drawn at — the Wall preset's depth.
   innerWallThickness: number;
 }
@@ -398,6 +400,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     wallStart,
     onWallStartChange,
     onDrawWall,
+    onFinishDrawing,
     innerWallThickness,
   },
   ref,
@@ -536,11 +539,18 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
   }
 
   // Adds a point in the Walls tool: the next outline corner, or an inner wall's start or end.
-  // Inner walls chain — each one starts where the last ended — until you click the same point
-  // twice or press Esc.
+  // Clicking back on the outline's first corner (or its last corner again) closes it and
+  // finishes. An inner wall is done once its end is placed — to continue from it, start the
+  // next wall on its end, which snaps.
   function placeWallPoint(p: Point) {
     setTypedLength("");
     if (wallTool === "outline") {
+      const first = outline[0];
+      const last = outline[outline.length - 1];
+      if ((outline.length >= 3 && distance(p, first) < 0.5) || (last && distance(p, last) < 0.5)) {
+        onFinishDrawing();
+        return;
+      }
       onOutlineChange([...outline, p]);
       return;
     }
@@ -550,12 +560,20 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
       onWallStartChange(null);
     } else {
       onDrawWall(wallStart, p);
-      onWallStartChange(p);
+      onWallStartChange(null);
     }
   }
 
-  // While drawing, type a length and press Enter to place the next point exactly; Esc clears
-  // what's typed, then ends the wall chain.
+  // Esc (or right-click) backs out one step: clears a typed length, then drops a wall that's
+  // only been started, then finishes drawing.
+  function stepBack() {
+    if (typedLength) setTypedLength("");
+    else if (wallTool === "inner" && wallStart) onWallStartChange(null);
+    else onFinishDrawing();
+  }
+
+  // While drawing, type a length and press Enter to place the next point exactly. Enter with
+  // nothing typed finishes drawing.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Shift") setShiftHeld(e.type === "keydown");
@@ -564,8 +582,12 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return;
 
       if (e.key === "Escape") {
-        if (typedLength) setTypedLength("");
-        else if (wallTool === "inner") onWallStartChange(null);
+        stepBack();
+        return;
+      }
+      if (e.key === "Enter" && !typedLength) {
+        e.preventDefault();
+        onFinishDrawing();
         return;
       }
       if (!anchor) return;
@@ -759,6 +781,11 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
           className="floorplan-canvas__svg"
           style={{ width: VIEW_W * zoom, height: VIEW_H * zoom, cursor: mode === "comment" ? "crosshair" : undefined }}
           onClick={handleSvgClick}
+          onContextMenu={(e) => {
+            if (mode !== "walls") return;
+            e.preventDefault();
+            stepBack();
+          }}
           onMouseLeave={() => {
             onCursorMove(null);
             setCrosshair(null);
@@ -1062,6 +1089,26 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
                   style={{ opacity: 0.7, strokeDasharray: "2 4" }}
                 />
               )}
+              {mode === "walls" &&
+                wallTool === "outline" &&
+                outline.length >= 3 &&
+                crosshair.kind === "point" &&
+                distance(crosshair, outline[0]) < 0.5 && (
+                  <text
+                    x={crosshair.x + 12 / zoom}
+                    y={crosshair.y - 12 / zoom}
+                    fontFamily="monospace"
+                    fontSize={11 / zoom}
+                    fontWeight={600}
+                    fill="var(--color-accent)"
+                    paintOrder="stroke"
+                    stroke="var(--color-canvas)"
+                    strokeWidth={3 / zoom}
+                    strokeLinejoin="round"
+                  >
+                    Click to close outline
+                  </text>
+                )}
               {crosshair.kind === "point" && (
                 <rect
                   x={crosshair.x - 6 / zoom}

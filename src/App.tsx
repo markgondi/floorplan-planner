@@ -45,8 +45,8 @@ const LABELS_STORAGE_KEY = "floorplan-planner:labels";
 const SNAP_STORAGE_KEY = "floorplan-planner:grid-snap";
 
 const WALL_TOOL_HELP: Record<WallTool, string> = {
-  outline: "Outline — click to add corners. Type a length + Enter for an exact side. Shift places freely.",
-  inner: "Inner Walls — click start, click end; walls chain on. Type a length + Enter for exact. Esc stops.",
+  outline: "Outline — click to add corners; click the first corner to close it. Type a length + Enter for an exact side.",
+  inner: "Inner Walls — click the start, then the end. Type a length + Enter for exact. Done or Esc when finished.",
 };
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
@@ -108,8 +108,8 @@ export default function App() {
   });
   const [wallTool, setWallTool] = useState<WallTool>("outline");
   const [wallStart, setWallStart] = useState<Point | null>(null);
-  // Inner walls drawn since this room was opened, newest last, so Undo Wall can step back.
-  const [drawnWalls, setDrawnWalls] = useState<{ id: string; from: Point }[]>([]);
+  // Ids of inner walls drawn since this room was opened, newest last, so Undo Wall can step back.
+  const [drawnWalls, setDrawnWalls] = useState<string[]>([]);
   const [zoom, setZoom] = useState(0.6);
   const [cursor, setCursor] = useState<Point | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -351,20 +351,20 @@ export default function App() {
       color: wall.color,
     };
     updateActiveRoom({ furniture: [...activeRoom.furniture, item] });
-    setDrawnWalls((prev) => [...prev, { id: item.id, from }]);
+    setDrawnWalls((prev) => [...prev, item.id]);
     handleSelectFurniture(item.id);
   }
 
-  // Removes the newest inner wall still on the plan and carries on drawing from its start.
+  // Removes the newest inner wall still on the plan.
   function handleUndoWall() {
     if (!activeRoom) return;
-    const remaining = drawnWalls.filter((w) => activeRoom.furniture.some((f) => f.id === w.id));
+    const remaining = drawnWalls.filter((id) => activeRoom.furniture.some((f) => f.id === id));
     const last = remaining[remaining.length - 1];
     if (!last) return;
-    updateActiveRoom({ furniture: activeRoom.furniture.filter((f) => f.id !== last.id) });
+    updateActiveRoom({ furniture: activeRoom.furniture.filter((f) => f.id !== last) });
     setDrawnWalls(remaining.slice(0, -1));
-    if (selectedFurnitureId === last.id) setSelectedFurnitureId(null);
-    setWallStart(last.from);
+    if (selectedFurnitureId === last) setSelectedFurnitureId(null);
+    setWallStart(null);
   }
 
   function handleUndoOutlinePoint() {
@@ -614,7 +614,7 @@ export default function App() {
             )}
             {mode === "walls" &&
               wallTool === "inner" &&
-              drawnWalls.some((w) => activeRoom.furniture.some((f) => f.id === w.id)) && (
+              drawnWalls.some((id) => activeRoom.furniture.some((f) => f.id === id)) && (
                 <button className="btn-ghost" onClick={handleUndoWall} title="Remove the last inner wall you drew">
                   Undo Wall
                 </button>
@@ -637,6 +637,15 @@ export default function App() {
                 >
                   Grid Snap {gridSnap ? "On" : "Off"}
                 </button>
+                {mode === "walls" && (
+                  <button
+                    className="btn-primary"
+                    onClick={() => handleModeChange("select")}
+                    title="Stop drawing and go back to Select (Enter, or Esc when nothing is in progress)"
+                  >
+                    Done
+                  </button>
+                )}
                 <span className="action-bar__divider" />
               </>
             )}
@@ -710,6 +719,7 @@ export default function App() {
                 wallStart={wallStart}
                 onWallStartChange={setWallStart}
                 onDrawWall={handleDrawWall}
+                onFinishDrawing={() => handleModeChange("select")}
                 innerWallThickness={(presets.find((p) => p.kind === "wall") ?? FURNITURE_PRESETS[0]).depth}
               />
             ) : (
