@@ -31,6 +31,13 @@ export function polygonPerimeterSegments(points: Point[]): { from: Point; to: Po
   return segments;
 }
 
+export function closestPointOnSegment(p: Point, a: Point, b: Point): Point {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const t = Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+  return { x: a.x + t * dx, y: a.y + t * dy };
+}
+
 // Even-odd ray cast: true when p lies inside the (possibly concave) polygon.
 export function pointInPolygon(p: Point, polygon: Point[]): boolean {
   let inside = false;

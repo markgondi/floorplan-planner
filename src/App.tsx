@@ -4,7 +4,7 @@ import Header from "./components/Header";
 import RoomList from "./components/RoomList";
 import FurniturePanel from "./components/FurniturePanel";
 import CommentsPanel from "./components/CommentsPanel";
-import FloorplanCanvas, { type FloorplanCanvasHandle } from "./components/FloorplanCanvas";
+import FloorplanCanvas, { type FloorplanCanvasHandle, type WallTool } from "./components/FloorplanCanvas";
 import SideView from "./components/SideView";
 import UnitsToggle from "./components/UnitsToggle";
 import Sidebar from "./components/Sidebar";
@@ -34,7 +34,7 @@ import {
 
 const MODE_HELP: Record<Mode, string> = {
   select: "Select — click a wall or an item to select it. Drag empty space to pan around.",
-  walls: "Walls — click points to draw the room outline. Points snap to the grid.",
+  walls: "Walls — trace the room outline, or switch to Inner Walls to draw walls inside it.",
   scale: "Scale — click two points on a wall of known length, then enter it. Or use Grid = 1m.",
   arrange: "Arrange — drag items to move them, then rotate or resize from the Items panel.",
   comment: "Comment — click anywhere to leave a pin for reviewers.",
@@ -42,6 +42,12 @@ const MODE_HELP: Record<Mode, string> = {
 
 const PRESETS_STORAGE_KEY = "floorplan-planner:presets";
 const LABELS_STORAGE_KEY = "floorplan-planner:labels";
+const SNAP_STORAGE_KEY = "floorplan-planner:grid-snap";
+
+const WALL_TOOL_HELP: Record<WallTool, string> = {
+  outline: "Outline — click to add corners. Type a length + Enter for an exact side. Shift places freely.",
+  inner: "Inner Walls — click start, click end; walls chain on. Type a length + Enter for exact. Esc stops.",
+};
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 function loadPresets(): FurniturePreset[] {
@@ -93,6 +99,17 @@ export default function App() {
       return true;
     }
   });
+  const [gridSnap, setGridSnap] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(SNAP_STORAGE_KEY) !== "off";
+    } catch {
+      return true;
+    }
+  });
+  const [wallTool, setWallTool] = useState<WallTool>("outline");
+  const [wallStart, setWallStart] = useState<Point | null>(null);
+  // Inner walls drawn since this room was opened, newest last, so Undo Wall can step back.
+  const [drawnWalls, setDrawnWalls] = useState<{ id: string; from: Point }[]>([]);
   const [zoom, setZoom] = useState(0.6);
   const [cursor, setCursor] = useState<Point | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -140,6 +157,14 @@ export default function App() {
   }, [showLabels]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(SNAP_STORAGE_KEY, gridSnap ? "on" : "off");
+    } catch {
+      // ignore write failures
+    }
+  }, [gridSnap]);
+
+  useEffect(() => {
     if (!activeRoomId) {
       setComments([]);
       return;
@@ -152,6 +177,8 @@ export default function App() {
   useEffect(() => {
     setSelectedWallIndex(null);
     setSelectedFurnitureId(null);
+    setWallStart(null);
+    setDrawnWalls([]);
   }, [activeRoomId]);
 
   // Side view always shows exactly one wall, so pick the first if none is chosen yet.
@@ -287,6 +314,57 @@ export default function App() {
     } catch {
       setSyncError("Failed to delete the room on the server.");
     }
+  }
+
+  // Opening the Walls tool on a room that already has its outline goes straight to drawing
+  // inner walls, so clicks don't accidentally add corners to the finished outline.
+  function handleModeChange(next: Mode) {
+    if (next === "walls" && mode !== "walls") {
+      setWallTool(activeRoom && activeRoom.outline.length >= 3 ? "inner" : "outline");
+    }
+    setWallStart(null);
+    setMode(next);
+  }
+
+  function handleWallToolChange(next: WallTool) {
+    setWallStart(null);
+    setWallTool(next);
+  }
+
+  function handleDrawWall(from: Point, to: Point) {
+    if (!activeRoom) return;
+    const wall = presets.find((p) => p.kind === "wall") ?? FURNITURE_PRESETS[0];
+    const scale = activeRoom.scalePxPerUnit || 1;
+    const item: Furniture = {
+      id: crypto.randomUUID(),
+      roomId: activeRoom.id,
+      label: wall.label,
+      shape: "rect",
+      kind: "wall",
+      width: Math.hypot(to.x - from.x, to.y - from.y) * scale,
+      depth: wall.depth,
+      height: wall.height,
+      elevation: wall.elevation,
+      x: (from.x + to.x) / 2,
+      y: (from.y + to.y) / 2,
+      rotation: Math.round(((Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI) * 100) / 100,
+      color: wall.color,
+    };
+    updateActiveRoom({ furniture: [...activeRoom.furniture, item] });
+    setDrawnWalls((prev) => [...prev, { id: item.id, from }]);
+    handleSelectFurniture(item.id);
+  }
+
+  // Removes the newest inner wall still on the plan and carries on drawing from its start.
+  function handleUndoWall() {
+    if (!activeRoom) return;
+    const remaining = drawnWalls.filter((w) => activeRoom.furniture.some((f) => f.id === w.id));
+    const last = remaining[remaining.length - 1];
+    if (!last) return;
+    updateActiveRoom({ furniture: activeRoom.furniture.filter((f) => f.id !== last.id) });
+    setDrawnWalls(remaining.slice(0, -1));
+    if (selectedFurnitureId === last.id) setSelectedFurnitureId(null);
+    setWallStart(last.from);
   }
 
   function handleUndoOutlinePoint() {
@@ -508,7 +586,23 @@ export default function App() {
           </div>
 
           <div className="action-bar__group">
-            {mode === "walls" && activeRoom.outline.length > 0 && (
+            {mode === "walls" && (
+              <div className="seg mono" title="Trace the room's outline, or draw walls inside it">
+                <button
+                  className={wallTool === "outline" ? "seg__btn seg__btn--active" : "seg__btn"}
+                  onClick={() => handleWallToolChange("outline")}
+                >
+                  Outline
+                </button>
+                <button
+                  className={wallTool === "inner" ? "seg__btn seg__btn--active" : "seg__btn"}
+                  onClick={() => handleWallToolChange("inner")}
+                >
+                  Inner Walls
+                </button>
+              </div>
+            )}
+            {mode === "walls" && wallTool === "outline" && activeRoom.outline.length > 0 && (
               <>
                 <button className="btn-ghost" onClick={handleUndoOutlinePoint}>
                   Undo Point
@@ -516,13 +610,32 @@ export default function App() {
                 <button className="btn-ghost" onClick={handleClearOutline}>
                   Clear Outline
                 </button>
-                <span className="action-bar__divider" />
               </>
             )}
+            {mode === "walls" &&
+              wallTool === "inner" &&
+              drawnWalls.some((w) => activeRoom.furniture.some((f) => f.id === w.id)) && (
+                <button className="btn-ghost" onClick={handleUndoWall} title="Remove the last inner wall you drew">
+                  Undo Wall
+                </button>
+              )}
             {mode === "scale" && (
+              <button className="btn-ghost" onClick={handleSetGridScale} title="One major grid square = 1 metre">
+                Grid = 1m
+              </button>
+            )}
+            {(mode === "walls" || mode === "scale") && (
               <>
-                <button className="btn-ghost" onClick={handleSetGridScale} title="One major grid square = 1 metre">
-                  Grid = 1m
+                <button
+                  className={gridSnap ? "btn-ghost btn-ghost--active" : "btn-ghost"}
+                  onClick={() => setGridSnap((v) => !v)}
+                  title={
+                    gridSnap
+                      ? "Points lock to the grid. Turn off to place them anywhere (corners and walls still snap)."
+                      : "Points go exactly where you click, locking only onto corners and walls."
+                  }
+                >
+                  Grid Snap {gridSnap ? "On" : "Off"}
                 </button>
                 <span className="action-bar__divider" />
               </>
@@ -549,7 +662,7 @@ export default function App() {
       )}
 
       <div className="workspace">
-        <ToolRail mode={mode} onModeChange={setMode} help={MODE_HELP} />
+        <ToolRail mode={mode} onModeChange={handleModeChange} help={MODE_HELP} />
 
         <Sidebar side="left" title="Rooms" collapsed={leftCollapsed} onToggle={() => setLeftCollapsed((c) => !c)}>
           <RoomList
@@ -592,6 +705,12 @@ export default function App() {
                 onZoomChange={(updater) => setZoom((z) => updater(z))}
                 onCursorMove={setCursor}
                 showLabels={showLabels}
+                gridSnap={gridSnap}
+                wallTool={wallTool}
+                wallStart={wallStart}
+                onWallStartChange={setWallStart}
+                onDrawWall={handleDrawWall}
+                innerWallThickness={(presets.find((p) => p.kind === "wall") ?? FURNITURE_PRESETS[0]).depth}
               />
             ) : (
               <SideView
@@ -666,7 +785,7 @@ export default function App() {
             ? `${selectedWallIndex + 1} · ${formatLength(pxToReal(selectedWall.length, activeRoom.scalePxPerUnit), unit)}`
             : null
         }
-        hint={MODE_HELP[mode]}
+        hint={mode === "walls" ? WALL_TOOL_HELP[wallTool] : MODE_HELP[mode]}
       />
     </div>
   );

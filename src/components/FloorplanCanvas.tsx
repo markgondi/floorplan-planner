@@ -1,13 +1,22 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { Point, WallRun } from "../lib/geometry";
-import { distance, mergeCollinearWalls, pointInPolygon, polygonPerimeterSegments, pxToReal, snapAngle } from "../lib/geometry";
+import {
+  closestPointOnSegment,
+  distance,
+  mergeCollinearWalls,
+  pointInPolygon,
+  polygonPerimeterSegments,
+  pxToReal,
+  snapAngle,
+} from "../lib/geometry";
 import type { Comment, Furniture } from "../lib/types";
 import { itemColor, itemOrigin } from "../lib/types";
 import type { Unit } from "../lib/units";
-import { dimensionTokens, formatDimensions, formatLength } from "../lib/units";
+import { dimensionTokens, formatDimensions, formatLength, toCm } from "../lib/units";
 import { exportSvgAsPng } from "../lib/export";
 
 type Mode = "select" | "walls" | "scale" | "arrange" | "comment";
+export type WallTool = "outline" | "inner";
 
 interface FloorplanCanvasProps {
   roomName: string;
@@ -30,6 +39,14 @@ interface FloorplanCanvasProps {
   onZoomChange: (updater: (zoom: number) => number) => void;
   onCursorMove: (point: Point | null) => void;
   showLabels: boolean;
+  gridSnap: boolean;
+  wallTool: WallTool;
+  // Where the inner wall being drawn starts; null when no wall is in progress.
+  wallStart: Point | null;
+  onWallStartChange: (point: Point | null) => void;
+  onDrawWall: (from: Point, to: Point) => void;
+  // Thickness (cm) new inner walls are drawn at — the Wall preset's depth.
+  innerWallThickness: number;
 }
 
 export interface FloorplanCanvasHandle {
@@ -49,6 +66,16 @@ const WALL_DIM_CLEARANCE = 7;
 const WALL_DIM_MIN_GAP = 5;
 // Letter-spacing of wall lengths, as a fraction of font size.
 const WALL_DIM_TRACKING = 0.04;
+// How close (in screen pixels, whatever the zoom) the pointer must be to a corner or wall
+// line for a click to lock onto it.
+const SNAP_RADIUS = 10;
+// How far (screen pixels) the pointer can stray from a 15° line out of the last point and
+// still lock onto it.
+const TRACK_RADIUS = 6;
+
+type SnapKind = "point" | "line" | "track" | "grid" | "free";
+// `angle` (radians) is set when the point is locked onto a tracked line.
+type SnappedPoint = Point & { kind: SnapKind; angle?: number };
 
 // Every item is drawn the same way — the item's own colour as a flat fill, one hairline
 // outline weight — with only the interior detail changing per kind. Keeps the plan reading
@@ -235,8 +262,9 @@ function segmentBoxGap(a: Point, b: Point, hw: number, hh: number): number {
 // Where a wall's length label goes: outside the room, parallel to the wall and clear of its
 // line, like a dimension on a drawing. A label longer than a short wall would run into the
 // neighbouring walls, so it slides along its wall — then steps further out — until every
-// wall line is at least WALL_DIM_MIN_GAP away.
-function placeWallLabel(run: WallRun, outline: Point[], text: string) {
+// wall line is at least WALL_DIM_MIN_GAP away. `thicknessPx` keeps it clear of a wall drawn
+// with real thickness rather than as a line.
+function placeWallLabel(run: WallRun, outline: Point[], text: string, thicknessPx = 0) {
   const len = run.length || 1;
   const ux = (run.to.x - run.from.x) / len;
   const uy = (run.to.y - run.from.y) / len;
@@ -260,7 +288,7 @@ function placeWallLabel(run: WallRun, outline: Point[], text: string) {
     return Math.min(...walls.map((w) => segmentBoxGap(local(w.from), local(w.to), hw, hh)));
   };
 
-  const base = WALL_DIM_CLEARANCE + hh;
+  const base = WALL_DIM_CLEARANCE + thicknessPx / 2 + hh;
   for (const out of [0, 8, 16]) {
     for (let step = 0; step * 3 <= hw; step++) {
       for (const along of step === 0 ? [0] : [step * 3, -step * 3]) {
@@ -365,6 +393,12 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     onZoomChange,
     onCursorMove,
     showLabels,
+    gridSnap,
+    wallTool,
+    wallStart,
+    onWallStartChange,
+    onDrawWall,
+    innerWallThickness,
   },
   ref,
 ) {
@@ -375,8 +409,185 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
   const [dragOffset, setDragOffset] = useState<Point>({ x: 0, y: 0 });
   const panState = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
   const didPan = useRef(false);
-  const [crosshair, setCrosshair] = useState<Point | null>(null);
+  const [crosshair, setCrosshair] = useState<SnappedPoint | null>(null);
+  // The unsnapped pointer, which sets the direction a typed length runs in.
+  const [pointer, setPointer] = useState<Point | null>(null);
+  const [shiftHeld, setShiftHeld] = useState(false);
+  // A length typed while drawing ("3000"), placed along the pointer's direction on Enter.
+  // It belongs to the tool it was typed in, so switching tools starts afresh.
+  const toolKey = `${mode}:${wallTool}`;
+  const [typed, setTyped] = useState({ key: toolKey, text: "" });
+  const typedLength = typed.key === toolKey ? typed.text : "";
+  const setTypedLength = (next: string | ((text: string) => string)) =>
+    setTyped((prev) => {
+      const current = prev.key === toolKey ? prev.text : "";
+      return { key: toolKey, text: typeof next === "function" ? next(current) : next };
+    });
   const [spaceHeld, setSpaceHeld] = useState(false);
+
+  const scale = scalePxPerUnit || 1;
+  // Where the next point or wall end is measured from, if a line is being drawn.
+  const anchor: Point | null =
+    mode !== "walls" ? null : wallTool === "outline" ? (outline[outline.length - 1] ?? null) : wallStart;
+
+  // The point a tracked line runs from: the last point placed while drawing walls, or the
+  // first calibration point while measuring scale.
+  const trackFrom: Point | null = mode === "scale" ? (calibrationPoints[0] ?? null) : anchor;
+
+  // Inner walls are items, so their centre lines and ends are worked out from position,
+  // rotation and length — they're snap targets just like the outline's corners and sides.
+  const innerWallLines = furniture
+    .filter((f) => f.kind === "wall")
+    .map((f) => {
+      const half = f.width / scale / 2;
+      const r = (f.rotation * Math.PI) / 180;
+      return {
+        from: { x: f.x - Math.cos(r) * half, y: f.y - Math.sin(r) * half },
+        to: { x: f.x + Math.cos(r) * half, y: f.y + Math.sin(r) * half },
+      };
+    });
+
+  // Snapping, strongest first: an existing corner or wall end; then angle tracking — a line
+  // from the last point within a few pixels of a 15° step locks to exactly that angle (ending
+  // where it meets a wall, or on the grid); then the grid (when on); then anywhere along an
+  // existing wall. Clicks land on whole screen pixels, so without tracking a wall meant to be
+  // square comes out a fraction of a degree off. Holding Shift places the point exactly
+  // where you click.
+  function snapPoint(raw: Point, free: boolean): SnappedPoint {
+    if (free) return { ...raw, kind: "free" };
+    const radius = SNAP_RADIUS / zoom;
+    const lines = [...(outline.length > 1 ? polygonPerimeterSegments(outline) : []), ...innerWallLines];
+
+    let nearest: Point | null = null;
+    let nearestDist = radius;
+    for (const v of [...outline, ...innerWallLines.flatMap((l) => [l.from, l.to])]) {
+      const d = distance(raw, v);
+      if (d <= nearestDist) {
+        nearest = v;
+        nearestDist = d;
+      }
+    }
+    if (nearest) return { ...nearest, kind: "point" };
+
+    const from = trackFrom;
+    if (from && distance(from, raw) > radius) {
+      const step = Math.PI / 12;
+      const angle = Math.round(Math.atan2(raw.y - from.y, raw.x - from.x) / step) * step;
+      // Exact zeros for square lines, so they stay perfectly square.
+      const dx = Math.abs(Math.cos(angle)) < 1e-9 ? 0 : Math.cos(angle);
+      const dy = Math.abs(Math.sin(angle)) < 1e-9 ? 0 : Math.sin(angle);
+      const along = (raw.x - from.x) * dx + (raw.y - from.y) * dy;
+      const offTrack = Math.abs(-(raw.x - from.x) * dy + (raw.y - from.y) * dx);
+      if (along > 0 && offTrack <= TRACK_RADIUS / zoom) {
+        const onTrack = (t: number): SnappedPoint => ({ x: from.x + dx * t, y: from.y + dy * t, kind: "track", angle });
+
+        // Where the tracked line meets a wall near the pointer.
+        let meet: number | null = null;
+        for (const line of lines) {
+          const ex = line.to.x - line.from.x;
+          const ey = line.to.y - line.from.y;
+          const denom = dx * ey - dy * ex;
+          if (Math.abs(denom) < 1e-9) continue;
+          const t = ((line.from.x - from.x) * ey - (line.from.y - from.y) * ex) / denom;
+          const u = ((line.from.x - from.x) * dy - (line.from.y - from.y) * dx) / denom;
+          if (t > 0 && u >= -1e-9 && u <= 1 + 1e-9 && Math.abs(t - along) <= radius && (meet === null || Math.abs(t - along) < Math.abs(meet - along))) {
+            meet = t;
+          }
+        }
+        if (meet !== null) return onTrack(meet);
+
+        if (gridSnap) {
+          // Square lines land on the grid line they cross; others step in grid-sized lengths.
+          const t =
+            dy === 0
+              ? (Math.round(raw.x / GRID_MINOR) * GRID_MINOR - from.x) / dx
+              : dx === 0
+                ? (Math.round(raw.y / GRID_MINOR) * GRID_MINOR - from.y) / dy
+                : Math.round(along / GRID_MINOR) * GRID_MINOR;
+          if (t > 0) return onTrack(t);
+        }
+        return onTrack(along);
+      }
+    }
+
+    if (gridSnap) return { ...snapToGrid(raw), kind: "grid" };
+
+    nearestDist = radius;
+    for (const line of lines) {
+      const c = closestPointOnSegment(raw, line.from, line.to);
+      const d = distance(raw, c);
+      if (d <= nearestDist) {
+        nearest = c;
+        nearestDist = d;
+      }
+    }
+    return nearest ? { ...nearest, kind: "line" } : { ...raw, kind: "free" };
+  }
+
+  // Where a typed length ends: that far from the anchor, toward the pointer, in 15° steps
+  // (so walls come out square) unless Shift is held.
+  function typedEnd(): Point | null {
+    const value = Number(typedLength.replace(",", "."));
+    if (!anchor || !pointer || !(value > 0)) return null;
+    let angle = Math.atan2(pointer.y - anchor.y, pointer.x - anchor.x);
+    if (!shiftHeld) angle = Math.round(angle / (Math.PI / 12)) * (Math.PI / 12);
+    const lengthPx = toCm(value, unit) / scale;
+    return { x: anchor.x + Math.cos(angle) * lengthPx, y: anchor.y + Math.sin(angle) * lengthPx };
+  }
+
+  // Adds a point in the Walls tool: the next outline corner, or an inner wall's start or end.
+  // Inner walls chain — each one starts where the last ended — until you click the same point
+  // twice or press Esc.
+  function placeWallPoint(p: Point) {
+    setTypedLength("");
+    if (wallTool === "outline") {
+      onOutlineChange([...outline, p]);
+      return;
+    }
+    if (!wallStart) {
+      onWallStartChange(p);
+    } else if (distance(p, wallStart) < 0.5) {
+      onWallStartChange(null);
+    } else {
+      onDrawWall(wallStart, p);
+      onWallStartChange(p);
+    }
+  }
+
+  // While drawing, type a length and press Enter to place the next point exactly; Esc clears
+  // what's typed, then ends the wall chain.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Shift") setShiftHeld(e.type === "keydown");
+      if (e.type !== "keydown" || mode !== "walls") return;
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return;
+
+      if (e.key === "Escape") {
+        if (typedLength) setTypedLength("");
+        else if (wallTool === "inner") onWallStartChange(null);
+        return;
+      }
+      if (!anchor) return;
+      if (/^[0-9]$/.test(e.key) || ((e.key === "." || e.key === ",") && !/[.,]/.test(typedLength))) {
+        e.preventDefault();
+        setTypedLength((t) => t + e.key);
+      } else if (e.key === "Backspace" && typedLength) {
+        e.preventDefault();
+        setTypedLength((t) => t.slice(0, -1));
+      } else if (e.key === "Enter" && typedLength) {
+        e.preventDefault();
+        const end = typedEnd();
+        if (end) placeWallPoint(end);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
+    };
+  });
 
   // Hold space to pan from any tool, the way most drawing apps do — otherwise panning
   // means either switching tools or holding the middle mouse button.
@@ -435,9 +646,10 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
       onAddComment(toSvgPoint(e));
       return;
     }
-    const p = snapToGrid(toSvgPoint(e));
+    const snapped = snapPoint(toSvgPoint(e), e.shiftKey);
+    const p = { x: snapped.x, y: snapped.y };
     if (mode === "walls") {
-      onOutlineChange([...outline, p]);
+      placeWallPoint(p);
     } else if (mode === "scale") {
       const next = [...calibrationPoints, p];
       if (next.length === 2) {
@@ -470,6 +682,8 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
   }
 
   function handleScrollMouseDown(e: React.MouseEvent) {
+    // Shift-clicking a free point shouldn't also select text on the page.
+    if (e.shiftKey && (mode === "walls" || mode === "scale")) e.preventDefault();
     if (mode !== "select" && e.button !== 1 && !spaceHeld) return;
     e.preventDefault();
     const container = scrollRef.current;
@@ -490,7 +704,9 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     }
     const p = toSvgPoint(e);
     onCursorMove(p);
-    setCrosshair(mode === "walls" || mode === "scale" ? snapToGrid(p) : p);
+    setPointer(p);
+    setShiftHeld(e.shiftKey);
+    setCrosshair(mode === "walls" || mode === "scale" ? snapPoint(p, e.shiftKey) : { ...p, kind: "free" });
     if (!dragId) return;
     onFurnitureChange(dragId, { x: p.x - dragOffset.x, y: p.y - dragOffset.y });
   }
@@ -734,7 +950,8 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
                       ))}
                     </text>
 
-                    {(dimsInside || isSelected) && (
+                    {/* Walls are too thin for dimensions inside, so theirs always show beside them. */}
+                    {(dimsInside || isSelected || item.kind === "wall") && (
                       <text
                         textAnchor="middle"
                         dominantBaseline="central"
@@ -767,12 +984,103 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
             </g>
           )}
 
-          {/* Precision crosshair — snaps to the grid in the tools where clicks snap. */}
+          {/* The line being drawn, from the last point to the pointer — or to a typed length —
+              measuring as it goes. Inner walls preview at their real thickness. */}
+          {anchor &&
+            (() => {
+              const end = typedEnd() ?? (crosshair ? { x: crosshair.x, y: crosshair.y } : null);
+              const length = end ? distance(anchor, end) : 0;
+              const thicknessPx = wallTool === "inner" ? innerWallThickness / scale : 0;
+              const text = typedLength
+                ? `${typedLength}▏${unit} ↵`
+                : scalePxPerUnit
+                  ? formatLength(pxToReal(length, scalePxPerUnit), unit)
+                  : `${length.toFixed(0)} px`;
+              const label = end && length > 0.5 ? placeWallLabel({ from: anchor, to: end, length }, outline, text, thicknessPx) : null;
+              return (
+                <g pointerEvents="none">
+                  {end && length > 0.5 && wallTool === "inner" && (
+                    <rect
+                      x={-length / 2}
+                      y={-thicknessPx / 2}
+                      width={length}
+                      height={Math.max(thicknessPx, 1)}
+                      transform={`translate(${(anchor.x + end.x) / 2} ${(anchor.y + end.y) / 2}) rotate(${(Math.atan2(end.y - anchor.y, end.x - anchor.x) * 180) / Math.PI})`}
+                      fill="var(--color-accent)"
+                      fillOpacity={0.22}
+                      stroke="var(--color-accent)"
+                      strokeWidth={1}
+                      strokeDasharray="4 3"
+                    />
+                  )}
+                  {end && length > 0.5 && wallTool === "outline" && (
+                    <line
+                      x1={anchor.x}
+                      y1={anchor.y}
+                      x2={end.x}
+                      y2={end.y}
+                      stroke="var(--color-accent)"
+                      strokeWidth={1.5}
+                      strokeDasharray="6 4"
+                    />
+                  )}
+                  <circle cx={anchor.x} cy={anchor.y} r={3.5} fill="var(--color-accent)" />
+                  {label && (
+                    <text
+                      transform={`translate(${label.x} ${label.y}) rotate(${label.angle})`}
+                      fontFamily="monospace"
+                      fontSize={WALL_DIM_SIZE}
+                      fontWeight={typedLength ? 700 : 500}
+                      fill="var(--color-accent)"
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      paintOrder="stroke"
+                      stroke="var(--color-canvas)"
+                      strokeWidth={3}
+                      strokeLinejoin="round"
+                    >
+                      {text}
+                    </text>
+                  )}
+                </g>
+              );
+            })()}
+
+          {/* Precision crosshair. A square marks a lock onto a corner or wall end, a cross a
+              lock onto a wall line. */}
           {crosshair && (mode === "walls" || mode === "scale" || mode === "comment") && (
             <g className="floorplan-canvas__crosshair" pointerEvents="none">
               <line x1={crosshair.x} y1="0" x2={crosshair.x} y2={VIEW_H} />
               <line x1="0" y1={crosshair.y} x2={VIEW_W} y2={crosshair.y} />
               <circle cx={crosshair.x} cy={crosshair.y} r="3.5" />
+              {crosshair.kind === "track" && crosshair.angle !== undefined && trackFrom && (
+                <line
+                  x1={trackFrom.x}
+                  y1={trackFrom.y}
+                  x2={trackFrom.x + Math.cos(crosshair.angle) * 4000}
+                  y2={trackFrom.y + Math.sin(crosshair.angle) * 4000}
+                  style={{ opacity: 0.7, strokeDasharray: "2 4" }}
+                />
+              )}
+              {crosshair.kind === "point" && (
+                <rect
+                  x={crosshair.x - 6 / zoom}
+                  y={crosshair.y - 6 / zoom}
+                  width={12 / zoom}
+                  height={12 / zoom}
+                  fill="none"
+                  stroke="var(--color-accent)"
+                  strokeWidth={1.5 / zoom}
+                />
+              )}
+              {crosshair.kind === "line" && (
+                <path
+                  d={`M ${crosshair.x - 5 / zoom} ${crosshair.y - 5 / zoom} L ${crosshair.x + 5 / zoom} ${crosshair.y + 5 / zoom} M ${crosshair.x - 5 / zoom} ${crosshair.y + 5 / zoom} L ${crosshair.x + 5 / zoom} ${crosshair.y - 5 / zoom}`}
+                  fill="none"
+                  stroke="var(--color-accent)"
+                  strokeWidth={1.5 / zoom}
+                />
+              )}
             </g>
           )}
 
