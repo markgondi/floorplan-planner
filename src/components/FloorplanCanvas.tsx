@@ -178,6 +178,75 @@ function FurnitureGlyph({ item, scalePxPerUnit }: { item: Furniture; scalePxPerU
   return base();
 }
 
+const NAME_MAX_SIZE = 11;
+const NAME_MIN_SIZE = 5.5;
+const LINE_HEIGHT = 1.15;
+// Rough advance width of a monospace glyph as a fraction of font size — close enough to
+// decide whether a name fits without measuring text in the DOM.
+const MONO_CHAR_WIDTH = 0.62;
+
+// Where an item's name can sit on it, reading horizontally: the item's centre (or, for a
+// door, the middle of its swing), plus how much horizontal and vertical room the rotated
+// shape actually leaves there — the length of the horizontal and vertical lines through
+// that point before they leave the item.
+function labelSpace(item: Furniture, scalePxPerUnit: number) {
+  const s = scalePxPerUnit || 1;
+  const hw = item.width / s / 2;
+  const hd = item.depth / s / 2;
+  const rad = (item.rotation * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+
+  if (item.kind === "door") {
+    // Centroid of the quarter-circle swing, whose centre is the hinge at the left end.
+    const leaf = 2 * hw;
+    const lx = -hw + 0.424 * leaf;
+    const ly = -0.424 * leaf;
+    return { cx: item.x + lx * cos - ly * sin, cy: item.y + lx * sin + ly * cos, width: 0.55 * leaf, height: 0.35 * leaf };
+  }
+
+  // A world direction expressed in the item's own axes (a along width, b along depth);
+  // the chord is how far a line through the centre runs before crossing an edge.
+  const chord = (a: number, b: number) =>
+    2 * Math.min(Math.abs(a) < 1e-6 ? Infinity : hw / Math.abs(a), Math.abs(b) < 1e-6 ? Infinity : hd / Math.abs(b));
+  return { cx: item.x, cy: item.y, width: chord(cos, -sin), height: chord(sin, cos) };
+}
+
+// Greedy word-wrap to a maximum character count. A single word longer than the limit
+// gets its own line rather than being broken mid-word.
+function wrapTokens(tokens: string[], maxChars: number): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const token of tokens) {
+    const next = line ? `${line} ${token}` : token;
+    if (next.length <= maxChars || !line) {
+      line = next;
+    } else {
+      lines.push(line);
+      line = token;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+// Largest font size (stepping down to minSize) at which the tokens wrap to fit the given
+// box. A narrow-but-tall item gets a stacked name rather than one line spilling past its
+// edges. If nothing fits, returns the minimum size wrapped as tightly as possible, with
+// fits=false so the caller can decide what to leave out.
+function fitLines(tokens: string[], width: number, height: number, maxSize: number, minSize: number) {
+  const charsAt = (size: number) => Math.max(1, Math.floor((width * 0.88) / (size * MONO_CHAR_WIDTH)));
+  for (let size = maxSize; size >= minSize; size -= 0.5) {
+    const maxChars = charsAt(size);
+    const lines = wrapTokens(tokens, maxChars);
+    const longest = Math.max(...lines.map((l) => l.length));
+    if (longest <= maxChars && lines.length * size * LINE_HEIGHT <= height) {
+      return { size, lines, fits: true };
+    }
+  }
+  return { size: minSize, lines: wrapTokens(tokens, charsAt(minSize)), fits: false };
+}
+
 // How far below its centre an item's drawing reaches once rotated, so its label clears it.
 // Doors draw their open leaf and swing arc outside their footprint, so they get a taller box.
 function itemBottomExtent(item: Furniture, scalePxPerUnit: number): number {
@@ -521,50 +590,98 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
             );
           })}
 
-          {/* Item names live in their own upright layer, so a rotated item's label stays
-              readable and every placed item says what it is and which preset it came from.
-              Styling is set as attributes rather than CSS classes so it survives PNG export. */}
+          {/* Item names are drawn on the item itself, in their own layer so every line stays
+              horizontal whatever the item's rotation. Names wrap and size to the room the item
+              actually has at its centre, so a narrow rotated table stacks its name rather than
+              spilling onto its neighbours. Faded dimensions follow inside when there's room;
+              when there isn't, they're shown below only for the selected item, to keep dense
+              layouts readable. Styling is set as attributes so it survives PNG export. */}
           {showLabels && (
             <g pointerEvents="none">
               {furniture.map((item) => {
-                const labelY = item.y + itemBottomExtent(item, scalePxPerUnit) + 13;
                 const origin = itemOrigin(item);
                 const isSelected = item.id === selectedFurnitureId;
-                const dims = `${formatLength(item.width, unit)} × ${formatLength(item.depth, unit)}`;
+                const space = labelSpace(item, scalePxPerUnit);
+
+                const name = fitLines(item.label.trim().split(/\s+/), space.width, space.height, NAME_MAX_SIZE, NAME_MIN_SIZE);
+                const nameBlock = name.lines.length * name.size * LINE_HEIGHT;
+
+                const dimsTokens = [
+                  ...(origin ? [`${origin.toUpperCase()} ·`] : []),
+                  formatLength(item.width, unit),
+                  `× ${formatLength(item.depth, unit)}`,
+                ];
+                const gap = 3;
+                const dims = fitLines(dimsTokens, space.width, space.height - nameBlock - gap, Math.min(8, name.size * 0.85), 4.5);
+                const dimsInside = name.fits && dims.fits;
+                const dimsBlock = dimsInside ? gap + dims.lines.length * dims.size * LINE_HEIGHT : 0;
+
+                const top = space.cy - (nameBlock + dimsBlock) / 2;
+                const lineY = (i: number, size: number, offset: number) => offset + (i + 0.5) * size * LINE_HEIGHT;
+                const halo = {
+                  paintOrder: "stroke" as const,
+                  stroke: "var(--color-canvas)",
+                  strokeLinejoin: "round" as const,
+                };
+
                 return (
                   <g key={item.id} className="floorplan-canvas__item-label">
                     <text
-                      x={item.x}
-                      y={labelY}
                       textAnchor="middle"
+                      dominantBaseline="central"
                       className="mono"
                       fontFamily="monospace"
-                      fontSize="10"
-                      fontWeight={isSelected ? 700 : 500}
-                      fill={isSelected ? "var(--color-accent)" : "var(--color-charcoal-soft)"}
-                      paintOrder="stroke"
-                      stroke="var(--color-canvas)"
-                      strokeWidth="3"
-                      strokeLinejoin="round"
+                      fontSize={name.size}
+                      fontWeight={isSelected ? 700 : 600}
+                      fill={isSelected ? "var(--color-accent)" : "var(--color-charcoal)"}
+                      strokeWidth={Math.max(1.2, name.size * 0.26)}
+                      strokeOpacity={0.7}
+                      {...halo}
                     >
-                      {item.label}
+                      {name.lines.map((line, i) => (
+                        <tspan key={i} x={space.cx} y={lineY(i, name.size, top)}>
+                          {line}
+                        </tspan>
+                      ))}
                     </text>
-                    <text
-                      x={item.x}
-                      y={labelY + 11}
-                      textAnchor="middle"
-                      className="mono"
-                      fontFamily="monospace"
-                      fontSize="8.5"
-                      fill="var(--color-line-soft)"
-                      opacity={isSelected ? 0.9 : 0.6}
-                      paintOrder="stroke"
-                      stroke="var(--color-canvas)"
-                      strokeWidth="2.5"
-                      strokeLinejoin="round"
-                    >
-                      {origin ? `${origin.toUpperCase()} · ${dims}` : dims}
-                    </text>
+
+                    {dimsInside ? (
+                      <text
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        className="mono"
+                        fontFamily="monospace"
+                        fontSize={dims.size}
+                        fill="var(--color-charcoal-soft)"
+                        opacity={isSelected ? 0.95 : 0.65}
+                        strokeWidth={1.6}
+                        strokeOpacity={0.55}
+                        {...halo}
+                      >
+                        {dims.lines.map((line, i) => (
+                          <tspan key={i} x={space.cx} y={lineY(i, dims.size, top + nameBlock + gap)}>
+                            {line}
+                          </tspan>
+                        ))}
+                      </text>
+                    ) : (
+                      isSelected && (
+                        <text
+                          x={item.x}
+                          y={item.y + itemBottomExtent(item, scalePxPerUnit) + 11}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          className="mono"
+                          fontFamily="monospace"
+                          fontSize={8}
+                          fill="var(--color-charcoal-soft)"
+                          strokeWidth={2.5}
+                          {...halo}
+                        >
+                          {dimsTokens.join(" ")}
+                        </text>
+                      )
+                    )}
                   </g>
                 );
               })}
