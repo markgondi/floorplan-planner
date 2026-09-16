@@ -44,6 +44,26 @@ export const KIND_COLOR: Record<FurnitureKind, string> = {
   generic: "#7d8288",
 };
 
+export const KIND_LABEL: Record<FurnitureKind, string> = {
+  wall: "Wall",
+  door: "Door",
+  reader: "Access Reader",
+  screen: "Screen",
+  shelf: "Shelf",
+  bench: "Bench",
+  generic: "Custom",
+};
+
+// The preset type an item was placed from — or null when its name already says so,
+// so an unrenamed "Door" doesn't get labelled "Door / DOOR".
+export function itemOrigin(item: Pick<Furniture, "kind" | "label">): string | null {
+  const name = item.label.trim().toLowerCase();
+  const type = KIND_LABEL[item.kind];
+  const preset = FURNITURE_PRESETS.find((p) => p.kind === item.kind);
+  if (name === type.toLowerCase() || (preset && name === preset.label.toLowerCase())) return null;
+  return type;
+}
+
 export const FURNITURE_PRESETS: FurniturePreset[] = [
   { id: "wall", label: "Wall", kind: "wall", width: 200, depth: 10, height: 240, elevation: 0, color: KIND_COLOR.wall },
   { id: "door", label: "Door", kind: "door", width: 90, depth: 5, height: 200, elevation: 0, color: KIND_COLOR.door },

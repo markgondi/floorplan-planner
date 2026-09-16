@@ -40,6 +40,7 @@ const MODE_HELP: Record<Mode, string> = {
 };
 
 const PRESETS_STORAGE_KEY = "floorplan-planner:presets";
+const LABELS_STORAGE_KEY = "floorplan-planner:labels";
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 function loadPresets(): FurniturePreset[] {
@@ -84,6 +85,13 @@ export default function App() {
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [rightTab, setRightTab] = useState("items");
+  const [showLabels, setShowLabels] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(LABELS_STORAGE_KEY) !== "off";
+    } catch {
+      return true;
+    }
+  });
   const [zoom, setZoom] = useState(0.6);
   const [cursor, setCursor] = useState<Point | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -121,6 +129,14 @@ export default function App() {
       // ignore write failures (private browsing, quota, etc.)
     }
   }, [presets]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LABELS_STORAGE_KEY, showLabels ? "on" : "off");
+    } catch {
+      // ignore write failures
+    }
+  }, [showLabels]);
 
   useEffect(() => {
     if (!activeRoomId) {
@@ -444,6 +460,15 @@ export default function App() {
               </button>
             </div>
             <UnitsToggle unit={activeRoom.unit} onChange={handleUnitChange} />
+            {view === "top" && (
+              <button
+                className={showLabels ? "btn-ghost btn-ghost--active" : "btn-ghost"}
+                onClick={() => setShowLabels((v) => !v)}
+                title={showLabels ? "Hide item names on the plan" : "Show item names on the plan"}
+              >
+                Labels {showLabels ? "On" : "Off"}
+              </button>
+            )}
             {view === "side" && wallCount > 0 && (
               <div className="stepper mono" title="Which wall this elevation is looking at">
                 <button
@@ -562,6 +587,7 @@ export default function App() {
                 zoom={zoom}
                 onZoomChange={(updater) => setZoom((z) => updater(z))}
                 onCursorMove={setCursor}
+                showLabels={showLabels}
               />
             ) : (
               <SideView

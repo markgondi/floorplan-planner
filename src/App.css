@@ -619,12 +619,6 @@
   animation: marching-ants 0.7s linear infinite;
 }
 
-.floorplan-canvas__item-dims {
-  font-size: 8.5px;
-  fill: var(--color-line-soft);
-  opacity: 0.55;
-  pointer-events: none;
-}
 
 @keyframes item-in {
   from {
@@ -1087,6 +1081,34 @@
 .furniture-panel__item--active {
   border-color: var(--color-accent);
   background: var(--color-accent-wash);
+}
+
+.furniture-panel__kind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-line-soft);
+}
+
+.furniture-panel__swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+  flex-shrink: 0;
+}
+
+.btn-ghost--active {
+  border-color: var(--color-accent-soft);
+  color: var(--color-charcoal);
+  background: var(--color-accent-wash);
+}
+
+.floorplan-canvas__item-label {
+  animation: item-in 0.22s var(--ease);
 }
 
 .furniture-panel__item > input {

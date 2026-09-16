@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import type { Point } from "../lib/geometry";
 import { distance, mergeCollinearWalls, polygonPerimeterSegments, pxToReal, snapAngle } from "../lib/geometry";
 import type { Comment, Furniture } from "../lib/types";
-import { KIND_COLOR } from "../lib/types";
+import { KIND_COLOR, itemOrigin } from "../lib/types";
 import type { Unit } from "../lib/units";
 import { formatLength } from "../lib/units";
 import { exportSvgAsPng } from "../lib/export";
@@ -29,6 +29,7 @@ interface FloorplanCanvasProps {
   zoom: number;
   onZoomChange: (updater: (zoom: number) => number) => void;
   onCursorMove: (point: Point | null) => void;
+  showLabels: boolean;
 }
 
 export interface FloorplanCanvasHandle {
@@ -177,6 +178,19 @@ function FurnitureGlyph({ item, scalePxPerUnit }: { item: Furniture; scalePxPerU
   return base();
 }
 
+// How far below its centre an item's drawing reaches once rotated, so its label clears it.
+// Doors draw their open leaf and swing arc outside their footprint, so they get a taller box.
+function itemBottomExtent(item: Furniture, scalePxPerUnit: number): number {
+  const s = scalePxPerUnit || 1;
+  const hw = item.width / s / 2;
+  const hd = item.depth / s / 2;
+  const [y0, y1] = item.kind === "door" ? [-2 * hw, Math.max(hd, 1.25)] : [-hd, hd];
+  const rad = (item.rotation * Math.PI) / 180;
+  const sin = Math.sin(rad);
+  const cos = Math.cos(rad);
+  return Math.max(...[-hw, hw].flatMap((x) => [y0, y1].map((y) => x * sin + y * cos)));
+}
+
 const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(function FloorplanCanvas(
   {
     roomName,
@@ -198,6 +212,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     zoom,
     onZoomChange,
     onCursorMove,
+    showLabels,
   },
   ref,
 ) {
@@ -479,8 +494,6 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
 
           {furniture.map((item) => {
             const isSelected = item.id === selectedFurnitureId;
-            const itemWidthPx = item.width / (scalePxPerUnit || 1);
-            const itemDepthPx = item.depth / (scalePxPerUnit || 1);
             return (
               <g
                 key={item.id}
@@ -493,47 +506,70 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
                 <title>{`${item.label} — ${formatLength(item.width, unit)} x ${formatLength(item.depth, unit)}`}</title>
                 <FurnitureGlyph item={item} scalePxPerUnit={scalePxPerUnit} />
                 {isSelected && (
-                  <>
-                    <rect
-                      x={-item.width / 2 / (scalePxPerUnit || 1) - 3}
-                      y={-item.depth / 2 / (scalePxPerUnit || 1) - 3}
-                      width={item.width / (scalePxPerUnit || 1) + 6}
-                      height={item.depth / (scalePxPerUnit || 1) + 6}
-                      fill="none"
-                      stroke="var(--color-accent)"
-                      strokeWidth="1.5"
-                      className="floorplan-canvas__marching"
-                    />
+                  <rect
+                    x={-item.width / 2 / (scalePxPerUnit || 1) - 3}
+                    y={-item.depth / 2 / (scalePxPerUnit || 1) - 3}
+                    width={item.width / (scalePxPerUnit || 1) + 6}
+                    height={item.depth / (scalePxPerUnit || 1) + 6}
+                    fill="none"
+                    stroke="var(--color-accent)"
+                    strokeWidth="1.5"
+                    className="floorplan-canvas__marching"
+                  />
+                )}
+              </g>
+            );
+          })}
+
+          {/* Item names live in their own upright layer, so a rotated item's label stays
+              readable and every placed item says what it is and which preset it came from.
+              Styling is set as attributes rather than CSS classes so it survives PNG export. */}
+          {showLabels && (
+            <g pointerEvents="none">
+              {furniture.map((item) => {
+                const labelY = item.y + itemBottomExtent(item, scalePxPerUnit) + 13;
+                const origin = itemOrigin(item);
+                const isSelected = item.id === selectedFurnitureId;
+                const dims = `${formatLength(item.width, unit)} × ${formatLength(item.depth, unit)}`;
+                return (
+                  <g key={item.id} className="floorplan-canvas__item-label">
                     <text
+                      x={item.x}
+                      y={labelY}
                       textAnchor="middle"
-                      dy="4"
-                      className="mono floorplan-canvas__furniture-label"
+                      className="mono"
+                      fontFamily="monospace"
+                      fontSize="10"
+                      fontWeight={isSelected ? 700 : 500}
+                      fill={isSelected ? "var(--color-accent)" : "var(--color-charcoal-soft)"}
                       paintOrder="stroke"
-                      stroke="var(--color-paper)"
+                      stroke="var(--color-canvas)"
                       strokeWidth="3"
                       strokeLinejoin="round"
                     >
                       {item.label}
                     </text>
-                  </>
-                )}
-                {/* Dimensions sit quietly under each item so the plan reads at a glance. */}
-                {itemWidthPx > 34 && (
-                  <text
-                    textAnchor="middle"
-                    dy={itemDepthPx / 2 + 11}
-                    className="mono floorplan-canvas__item-dims"
-                    paintOrder="stroke"
-                    stroke="var(--color-canvas)"
-                    strokeWidth="2.5"
-                    strokeLinejoin="round"
-                  >
-                    {formatLength(item.width, unit)} × {formatLength(item.depth, unit)}
-                  </text>
-                )}
-              </g>
-            );
-          })}
+                    <text
+                      x={item.x}
+                      y={labelY + 11}
+                      textAnchor="middle"
+                      className="mono"
+                      fontFamily="monospace"
+                      fontSize="8.5"
+                      fill="var(--color-line-soft)"
+                      opacity={isSelected ? 0.9 : 0.6}
+                      paintOrder="stroke"
+                      stroke="var(--color-canvas)"
+                      strokeWidth="2.5"
+                      strokeLinejoin="round"
+                    >
+                      {origin ? `${origin.toUpperCase()} · ${dims}` : dims}
+                    </text>
+                  </g>
+                );
+              })}
+            </g>
+          )}
 
           {/* Precision crosshair — snaps to the grid in the tools where clicks snap. */}
           {crosshair && (mode === "walls" || mode === "scale" || mode === "comment") && (

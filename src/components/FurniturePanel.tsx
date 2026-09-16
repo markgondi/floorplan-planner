@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Furniture, FurniturePreset } from "../lib/types";
+import { KIND_COLOR, KIND_LABEL } from "../lib/types";
 import type { Unit } from "../lib/units";
 import { fromCm, toCm } from "../lib/units";
 import { snapAngle } from "../lib/geometry";
@@ -97,6 +98,10 @@ export default function FurniturePanel({
               className={item.id === selectedId ? "furniture-panel__item furniture-panel__item--active" : "furniture-panel__item"}
               onClick={() => onSelect(item.id)}
             >
+              <div className="furniture-panel__kind mono">
+                <span className="furniture-panel__swatch" style={{ background: KIND_COLOR[item.kind] }} />
+                {KIND_LABEL[item.kind]}
+              </div>
               <input
                 value={item.label}
                 onChange={(e) => onUpdate(item.id, { label: e.target.value })}

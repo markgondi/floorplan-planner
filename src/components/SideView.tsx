@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import type { WallRun } from "../lib/geometry";
 import { distanceFromWallLine, pointOnWall, projectAlongWall, pxToReal, signedDistanceFromWall } from "../lib/geometry";
 import type { Furniture } from "../lib/types";
-import { KIND_COLOR } from "../lib/types";
+import { KIND_COLOR, itemOrigin } from "../lib/types";
 import type { Unit } from "../lib/units";
 import { formatLength } from "../lib/units";
 
@@ -257,7 +257,8 @@ export default function SideView({
                   strokeWidth="3"
                   strokeLinejoin="round"
                 >
-                  {item.label} · {formatLength(item.height, unit)}
+                  {item.label}
+                  {itemOrigin(item) ? ` (${itemOrigin(item)})` : ""} · {formatLength(item.height, unit)}
                 </text>
               </g>
             );
