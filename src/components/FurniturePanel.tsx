@@ -1,7 +1,9 @@
 import { useState } from "react";
 import type { Furniture, FurniturePreset } from "../lib/types";
 import { ITEM_PALETTE, KIND_LABEL, itemColor } from "../lib/types";
+import type { LibraryEntry } from "../lib/library";
 import type { Unit } from "../lib/units";
+import { formatDimensions } from "../lib/units";
 import DimensionInput from "./DimensionInput";
 import { snapAngle } from "../lib/geometry";
 
@@ -17,6 +19,35 @@ interface FurniturePanelProps {
   onDelete: (id: string) => void;
   onDuplicate: (id: string) => void;
   onApplyColorToName: (label: string, color: string) => void;
+  // Every distinct item made in any room, to place again in this one.
+  library: LibraryEntry[];
+  onAddFromLibrary: (entry: LibraryEntry) => void;
+  onRemoveFromLibrary: (entry: LibraryEntry) => void;
+}
+
+// A name field that applies on Enter or leaving the field (Esc abandons), so a half-typed name
+// isn't saved — and doesn't end up in the item library.
+function NameInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <input
+      value={draft ?? value}
+      onClick={(e) => e.stopPropagation()}
+      onFocus={() => setDraft(value)}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (draft !== null && draft.trim() !== "" && draft !== value) onChange(draft);
+        setDraft(null);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          setDraft(value);
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
 }
 
 export default function FurniturePanel({
@@ -31,8 +62,13 @@ export default function FurniturePanel({
   onDelete,
   onDuplicate,
   onApplyColorToName,
+  library,
+  onAddFromLibrary,
+  onRemoveFromLibrary,
 }: FurniturePanelProps) {
-  const [tab, setTab] = useState<"add" | "placed">("add");
+  const [tab, setTab] = useState<"add" | "placed" | "library">("add");
+  const [query, setQuery] = useState("");
+  const shownLibrary = library.filter((entry) => entry.label.toLowerCase().includes(query.trim().toLowerCase()));
   const sameNameCount = (item: Furniture) => furniture.filter((f) => f.label.trim() === item.label.trim()).length;
 
   return (
@@ -44,7 +80,50 @@ export default function FurniturePanel({
         <button className={tab === "placed" ? "active" : ""} onClick={() => setTab("placed")}>
           Placed ({furniture.length})
         </button>
+        <button className={tab === "library" ? "active" : ""} onClick={() => setTab("library")}>
+          Library ({library.length})
+        </button>
       </div>
+
+      {tab === "library" && (
+        <div className="furniture-panel__library">
+          <input
+            className="furniture-panel__search"
+            placeholder="Search the library"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {library.length === 0 && <div className="furniture-panel__empty">Items you make in any room are added here automatically</div>}
+          {library.length > 0 && shownLibrary.length === 0 && <div className="furniture-panel__empty">Nothing matches "{query}"</div>}
+          <ul className="furniture-panel__list">
+            {shownLibrary.map((entry) => (
+              <li key={entry.key} className="furniture-panel__lib-item">
+                <span className="furniture-panel__lib-swatch" style={{ background: itemColor(entry) }} />
+                <div className="furniture-panel__lib-text">
+                  <div className="furniture-panel__lib-name">{entry.label}</div>
+                  <div className="furniture-panel__lib-size mono">{formatDimensions([entry.width, entry.depth, entry.height], unit)}</div>
+                  <div className="furniture-panel__lib-rooms">
+                    {entry.rooms.length ? `In ${entry.rooms.join(", ")}` : "Not placed in any room"}
+                  </div>
+                </div>
+                <div className="furniture-panel__lib-actions">
+                  <button className="furniture-panel__lib-add" onClick={() => onAddFromLibrary(entry)} title={`Place a ${entry.label} in this room`}>
+                    + Add
+                  </button>
+                  <button
+                    className="furniture-panel__lib-remove"
+                    onClick={() => onRemoveFromLibrary(entry)}
+                    title="Remove from the library (items already placed stay)"
+                    aria-label={`Remove ${entry.label} from the library`}
+                  >
+                    ×
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {tab === "add" && (
         <div className="furniture-panel__presets">
@@ -90,25 +169,21 @@ export default function FurniturePanel({
               onClick={() => onSelect(item.id)}
             >
               {item.kind !== "generic" && <div className="furniture-panel__kind mono">{KIND_LABEL[item.kind]}</div>}
-              <input
-                value={item.label}
-                onChange={(e) => onUpdate(item.id, { label: e.target.value })}
-                onClick={(e) => e.stopPropagation()}
-              />
+              <NameInput value={item.label} onChange={(label) => onUpdate(item.id, { label })} />
               <div className="furniture-panel__dims mono">
                 <label>
                   <span>L</span>
-                  <DimensionInput valueCm={item.width} unit={unit} onChange={(v) => onUpdate(item.id, { width: v })} onClick={(e) => e.stopPropagation()} />
+                  <DimensionInput valueCm={item.width} unit={unit} onChange={(v) => onUpdate(item.id, { width: v })} onClick={(e) => e.stopPropagation()} commitOnEnter />
                   <span className="furniture-panel__unit">{unit}</span>
                 </label>
                 <label>
                   <span>D</span>
-                  <DimensionInput valueCm={item.depth} unit={unit} onChange={(v) => onUpdate(item.id, { depth: v })} onClick={(e) => e.stopPropagation()} />
+                  <DimensionInput valueCm={item.depth} unit={unit} onChange={(v) => onUpdate(item.id, { depth: v })} onClick={(e) => e.stopPropagation()} commitOnEnter />
                   <span className="furniture-panel__unit">{unit}</span>
                 </label>
                 <label>
                   <span>H</span>
-                  <DimensionInput valueCm={item.height} unit={unit} onChange={(v) => onUpdate(item.id, { height: v })} onClick={(e) => e.stopPropagation()} />
+                  <DimensionInput valueCm={item.height} unit={unit} onChange={(v) => onUpdate(item.id, { height: v })} onClick={(e) => e.stopPropagation()} commitOnEnter />
                   <span className="furniture-panel__unit">{unit}</span>
                 </label>
               </div>

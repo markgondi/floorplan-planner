@@ -1,4 +1,5 @@
 import type { Comment, Folder, Room } from "./types";
+import type { LibraryItem } from "./library";
 
 const BASE = "/api";
 
@@ -97,4 +98,19 @@ export async function setCommentResolved(id: string, resolved: boolean): Promise
 export async function deleteComment(id: string): Promise<void> {
   const res = await fetch(`${BASE}/comments?id=${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete comment");
+}
+
+export async function listLibrary(): Promise<LibraryItem[]> {
+  const res = await fetch(`${BASE}/library`);
+  if (!res.ok) throw new Error("Failed to load the item library");
+  return res.json();
+}
+
+export async function removeLibraryItem(item: LibraryItem): Promise<void> {
+  const res = await fetch(`${BASE}/library?key=${encodeURIComponent(item.key)}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(item),
+  });
+  if (!res.ok) throw new Error("Failed to remove the item from the library");
 }

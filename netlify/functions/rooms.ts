@@ -1,5 +1,6 @@
 import type { Handler } from "@netlify/functions";
 import { createClient } from "@libsql/client/web";
+import { belongsInLibrary, libraryKey } from "../../src/lib/library";
 
 const db = createClient({
   url: process.env.TURSO_DATABASE_URL!,
@@ -119,6 +120,13 @@ export const handler: Handler = async (event) => {
             f.rotation,
             f.color,
           ],
+        })),
+        // Every item made in a room goes into the shared library (once per name, kind and
+        // size). Its colour follows the latest save; an entry someone removed stays removed.
+        ...room.furniture.filter(belongsInLibrary).map((f: any) => ({
+          sql: `INSERT INTO library_items (key, id, label, kind, width, depth, height, elevation, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET label = excluded.label, elevation = excluded.elevation, color = excluded.color, updated_at = datetime('now')`,
+          args: [libraryKey(f), crypto.randomUUID(), f.label.trim(), f.kind ?? "generic", f.width, f.depth, f.height ?? 60, f.elevation ?? 0, f.color],
         })),
       ],
       "write",

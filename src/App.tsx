@@ -14,6 +14,8 @@ import DimensionInput from "./components/DimensionInput";
 import type { Comment, Folder, Room, Furniture, FurniturePreset } from "./lib/types";
 import { FURNITURE_PRESETS } from "./lib/types";
 import type { Point } from "./lib/geometry";
+import type { LibraryEntry, LibraryItem } from "./lib/library";
+import { belongsInLibrary, libraryKey } from "./lib/library";
 import type { Unit } from "./lib/units";
 import { formatDimensions, formatLength, formatScale } from "./lib/units";
 import { computeScale, mergeCollinearWalls, polygonPerimeterSegments, pxToReal, setWallFixed, setWallLength } from "./lib/geometry";
@@ -26,7 +28,9 @@ import {
   deleteRoom,
   listComments,
   listFolders,
+  listLibrary,
   listRooms,
+  removeLibraryItem,
   renameFolder,
   saveRoom,
   setCommentResolved,
@@ -89,6 +93,8 @@ export default function App() {
   const [syncError, setSyncError] = useState<string | null>(null);
   // A short explanation when something you asked for can't be done (e.g. a fixed wall is in the way).
   const [notice, setNotice] = useState<string | null>(null);
+  // The shared item library as last loaded (entries rooms add after that show up via libraryEntries).
+  const [library, setLibrary] = useState<LibraryItem[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [presets, setPresets] = useState<FurniturePreset[]>(loadPresets);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
@@ -128,8 +134,13 @@ export default function App() {
     didInit.current = true;
     (async () => {
       try {
-        const [loaded, loadedFolders] = await Promise.all([listRooms(), listFolders().catch(() => [])]);
+        const [loaded, loadedFolders, loadedLibrary] = await Promise.all([
+          listRooms(),
+          listFolders().catch(() => []),
+          listLibrary().catch(() => []),
+        ]);
         setFolders(loadedFolders);
+        setLibrary(loadedLibrary);
         if (loaded.length > 0) {
           setRooms(loaded);
           setActiveRoomId(loaded[0].id);
@@ -202,6 +213,29 @@ export default function App() {
   const wallRuns = activeRoom ? mergeCollinearWalls(activeRoom.outline) : [];
   const selectedWall = selectedWallIndex !== null ? (wallRuns[selectedWallIndex] ?? null) : null;
   const selectedItem = activeRoom?.furniture.find((f) => f.id === selectedFurnitureId) ?? null;
+
+  // The item library as shown: everything saved to the shared library, plus any item in a room
+  // that hasn't reached it yet (it's added when that room next saves), less anything removed —
+  // each with the names of the rooms it's placed in.
+  const libraryEntries: LibraryEntry[] = (() => {
+    const removed = new Set(library.filter((l) => l.hidden).map((l) => l.key));
+    const byKey = new Map<string, LibraryEntry>();
+    for (const l of library) if (!l.hidden) byKey.set(l.key, { ...l, rooms: [] });
+    for (const room of rooms) {
+      for (const f of room.furniture) {
+        if (!belongsInLibrary(f)) continue;
+        const key = libraryKey(f);
+        if (removed.has(key)) continue;
+        let entry = byKey.get(key);
+        if (!entry) {
+          entry = { key, id: key, label: f.label.trim(), kind: f.kind, width: f.width, depth: f.depth, height: f.height, elevation: f.elevation, color: f.color, hidden: false, rooms: [] };
+          byKey.set(key, entry);
+        }
+        if (!entry.rooms.includes(room.name.trim())) entry.rooms.push(room.name.trim());
+      }
+    }
+    return [...byKey.values()].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }) || a.width - b.width);
+  })();
   const wallCount = wallRuns.length;
   const perimeterPx = activeRoom
     ? polygonPerimeterSegments(activeRoom.outline).reduce((sum, s) => sum + s.length, 0)
@@ -526,7 +560,7 @@ export default function App() {
     applyScale(1, null);
   }
 
-  function handleAddPreset(preset: FurniturePreset) {
+  function handleAddPreset(preset: Pick<FurniturePreset, "label" | "kind" | "width" | "depth" | "height" | "elevation" | "color">) {
     if (!activeRoom) return;
     const offset = (activeRoom.furniture.length % 6) * 30;
     const item: Furniture = {
@@ -546,6 +580,18 @@ export default function App() {
     };
     updateActiveRoom({ furniture: [...activeRoom.furniture, item] });
     handleSelectFurniture(item.id);
+  }
+
+  async function handleRemoveFromLibrary(entry: LibraryEntry) {
+    const size = formatDimensions([entry.width, entry.depth, entry.height], activeRoom?.unit ?? "mm");
+    if (!window.confirm(`Remove "${entry.label}" (${size}) from the library?\n\nItems already placed in rooms stay where they are.`)) return;
+    const { rooms: _rooms, ...item } = entry;
+    try {
+      await removeLibraryItem({ ...item, hidden: true });
+      setLibrary((prev) => [...prev.filter((l) => l.key !== entry.key), { ...item, hidden: true }]);
+    } catch {
+      setSyncError("Failed to remove the item from the library. Try again in a moment.");
+    }
   }
 
   function handleUpdatePreset(id: string, patch: Partial<FurniturePreset>) {
@@ -950,6 +996,9 @@ export default function App() {
                 onDelete={handleDeleteFurniture}
                 onDuplicate={handleDuplicateFurniture}
                 onApplyColorToName={handleApplyColorToName}
+                library={libraryEntries}
+                onAddFromLibrary={handleAddPreset}
+                onRemoveFromLibrary={handleRemoveFromLibrary}
               />
             ) : (
               <CommentsPanel comments={comments} onResolve={handleResolveComment} onDelete={handleDeleteComment} />

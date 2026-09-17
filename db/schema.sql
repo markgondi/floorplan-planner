@@ -48,3 +48,21 @@ CREATE TABLE IF NOT EXISTS comments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_comments_room ON comments(room_id);
+
+-- Every distinct item made in any room, shared across rooms. Filled automatically when a room
+-- is saved; `key` is the item's name (trimmed, lower-case), kind and size, so the same item
+-- saved again doesn't duplicate. `hidden` = removed from the library by a person.
+CREATE TABLE IF NOT EXISTS library_items (
+  key TEXT PRIMARY KEY,
+  id TEXT NOT NULL,
+  label TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'generic',
+  width REAL NOT NULL,
+  depth REAL NOT NULL,
+  height REAL NOT NULL,
+  elevation REAL NOT NULL DEFAULT 0,
+  color TEXT,
+  hidden INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);

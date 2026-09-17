@@ -1069,6 +1069,107 @@
   color: var(--color-on-accent);
 }
 
+/* ─── Item library ─────────────────────────────────────────────────────── */
+
+.furniture-panel__library {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.furniture-panel__search {
+  font-size: 12px;
+  padding: 6px 8px;
+  border-color: var(--color-hairline);
+}
+
+.furniture-panel__lib-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-md);
+  background: var(--color-paper);
+  transition: border-color 0.15s ease;
+}
+
+.furniture-panel__lib-item:hover {
+  border-color: var(--color-accent-soft);
+}
+
+.furniture-panel__lib-swatch {
+  width: 12px;
+  height: 12px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  border: 1px solid var(--color-line-soft);
+}
+
+.furniture-panel__lib-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.furniture-panel__lib-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-charcoal);
+  overflow-wrap: anywhere;
+}
+
+.furniture-panel__lib-size {
+  font-size: 11px;
+  color: var(--color-charcoal-soft);
+}
+
+.furniture-panel__lib-rooms {
+  font-size: 10px;
+  color: var(--color-line-soft);
+  overflow-wrap: anywhere;
+}
+
+.furniture-panel__lib-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.furniture-panel__lib-add {
+  font-size: 11px;
+  padding: 4px 8px;
+  white-space: nowrap;
+  background: transparent;
+  border-color: var(--color-hairline);
+  color: var(--color-charcoal-soft);
+}
+
+.furniture-panel__lib-add:hover {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.furniture-panel__lib-remove {
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 0 3px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-line-soft);
+}
+
+.furniture-panel__lib-remove:hover {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
 .furniture-panel__list {
   list-style: none;
   margin: 0;
