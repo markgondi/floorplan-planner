@@ -29,7 +29,7 @@ interface FloorplanCanvasProps {
   imageUrl: string | null;
   mode: Mode;
   onOutlineChange: (points: Point[]) => void;
-  onCalibrate: (pixelDistance: number, realLengthCm: number) => void;
+  onCalibrate: (pixelDistance: number, realLengthCm: number, from: Point, to: Point) => void;
   onFurnitureChange: (id: string, patch: Partial<Furniture>) => void;
   onSelectFurniture: (id: string | null) => void;
   onAddComment: (point: Point) => void;
@@ -312,7 +312,8 @@ function roomSpans(run: WallRun, walls: WallLine[]): { start: number; end: numbe
 }
 
 // A wall length on the plan. Styled with attributes so it survives PNG export.
-function DimText({ place, text, opacity }: { place: { x: number; y: number; angle: number }; text: string; opacity?: number }) {
+// Fixed (measured) lengths show in the accent colour.
+function DimText({ place, text, opacity, fixed }: { place: { x: number; y: number; angle: number }; text: string; opacity?: number; fixed?: boolean }) {
   return (
     <text
       transform={`translate(${place.x} ${place.y}) rotate(${place.angle})`}
@@ -320,7 +321,8 @@ function DimText({ place, text, opacity }: { place: { x: number; y: number; angl
       fontFamily="monospace"
       fontSize={WALL_DIM_SIZE}
       letterSpacing={`${WALL_DIM_TRACKING}em`}
-      fill="var(--color-line-soft)"
+      fill={fixed ? "var(--color-accent)" : "var(--color-line-soft)"}
+      fontWeight={fixed ? 600 : undefined}
       opacity={opacity}
       textAnchor="middle"
       dominantBaseline="central"
@@ -657,7 +659,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
   // Clicking back on the outline's first corner (or its last corner again) closes it and
   // finishes. An inner wall is done once its end is placed — to continue from it, start the
   // next wall on its end, which snaps.
-  function placeWallPoint(p: Point) {
+  function placeWallPoint(p: Point, typed = false) {
     setTypedLength("");
     if (wallTool === "outline") {
       const first = outline[0];
@@ -666,7 +668,9 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
         onFinishDrawing();
         return;
       }
-      onOutlineChange([...outline, p]);
+      // A side whose length was typed in is exact, so it's fixed.
+      const before = typed && last ? [...outline.slice(0, -1), { ...last, fixed: true }] : outline;
+      onOutlineChange([...before, p]);
       return;
     }
     if (!wallStart) {
@@ -715,7 +719,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
       } else if (e.key === "Enter" && typedLength) {
         e.preventDefault();
         const end = typedEnd();
-        if (end) placeWallPoint(end);
+        if (end) placeWallPoint(end, true);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -757,15 +761,15 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
   // meet a wall, each room's stretch gets its own length, with ticks where they divide, and
   // the overall length sits one row further out.
   const wallDimensions = (() => {
-    const labels: { key: string; place: { x: number; y: number; angle: number }; text: string; opacity?: number }[] = [];
+    const labels: { key: string; place: { x: number; y: number; angle: number }; text: string; opacity?: number; fixed?: boolean }[] = [];
     const ticks: { key: string; x1: number; y1: number; x2: number; y2: number }[] = [];
     if (outline.length < 2) return { labels, ticks };
     const measure = (px: number) => (scalePxPerUnit ? formatLength(pxToReal(px, scalePxPerUnit), unit) : `${px.toFixed(0)} px`);
     const placed: Point[][] = [];
-    const place = (key: string, run: WallRun, text: string, thicknessPx = 0, opacity?: number) => {
+    const place = (key: string, run: WallRun, text: string, thicknessPx = 0, opacity?: number, fixed?: boolean) => {
       const spot = placeWallLabel(run, outline, text, thicknessPx, placed);
       placed.push(labelBox(spot, text));
-      labels.push({ key, place: spot, text, opacity });
+      labels.push({ key, place: spot, text, opacity, fixed });
 
       // A label that had to move well away from its wall (crowded short walls) gets a thin
       // leader back to the wall, drawn from the wall to the edge of the text.
@@ -808,8 +812,8 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
         });
       overalls.push({ key: `wall-${i}-overall`, run });
     });
-    firstRow.sort((a, b) => b.run.length - a.run.length).forEach(({ key, run }) => place(key, run, measure(run.length)));
-    overalls.forEach(({ key, run }) => place(key, run, measure(run.length), 2 * (WALL_DIM_SIZE + 6), 0.7));
+    firstRow.sort((a, b) => b.run.length - a.run.length).forEach(({ key, run }) => place(key, run, measure(run.length), 0, undefined, run.fixed));
+    overalls.forEach(({ key, run }) => place(key, run, measure(run.length), 2 * (WALL_DIM_SIZE + 6), run.fixed ? 1 : 0.7, run.fixed));
     return { labels, ticks };
   })();
 
@@ -858,7 +862,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
         const answer = window.prompt(`Real length of the line you just measured, in ${unit}:`, current);
         const realLength = Number((answer ?? "").trim().replace(",", "."));
         if (realLength > 0) {
-          onCalibrate(measuredPx, toCm(realLength, unit));
+          onCalibrate(measuredPx, toCm(realLength, unit), next[0], next[1]);
         }
         setCalibrationPoints([]);
       } else {
@@ -1004,7 +1008,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
                 <line key={t.key} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} stroke="var(--color-line-soft)" strokeWidth={0.8} opacity={0.8} />
               ))}
               {wallDimensions.labels.map((l) => (
-                <DimText key={l.key} place={l.place} text={l.text} opacity={l.opacity} />
+                <DimText key={l.key} place={l.place} text={l.text} opacity={l.opacity} fixed={l.fixed} />
               ))}
             </g>
           )}

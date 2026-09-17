@@ -83,40 +83,46 @@ export const handler: Handler = async (event) => {
 
   if (event.httpMethod === "PUT") {
     const room = JSON.parse(event.body ?? "{}");
-    await db.execute({
-      sql: `UPDATE rooms SET name = ?, folder_id = ?, ceiling_height = ?, scale_px_per_unit = ?, unit = ?, floorplan_image_url = ?, outline_json = ?, updated_at = datetime('now') WHERE id = ?`,
-      args: [
-        room.name,
-        room.folderId ?? null,
-        room.ceilingHeight ?? 240,
-        room.scalePxPerUnit,
-        room.unit,
-        room.floorplanImageUrl,
-        JSON.stringify(room.outline),
-        room.id,
+    // One transaction: the room and all its items are replaced together or not at all. Run
+    // statement by statement, two overlapping saves could interleave — one deleting items the
+    // other was re-inserting — failing with duplicate ids and leaving a room half-emptied.
+    await db.batch(
+      [
+        {
+          sql: `UPDATE rooms SET name = ?, folder_id = ?, ceiling_height = ?, scale_px_per_unit = ?, unit = ?, floorplan_image_url = ?, outline_json = ?, updated_at = datetime('now') WHERE id = ?`,
+          args: [
+            room.name,
+            room.folderId ?? null,
+            room.ceilingHeight ?? 240,
+            room.scalePxPerUnit,
+            room.unit,
+            room.floorplanImageUrl,
+            JSON.stringify(room.outline),
+            room.id,
+          ],
+        },
+        { sql: "DELETE FROM furniture WHERE room_id = ?", args: [room.id] },
+        ...room.furniture.map((f: any) => ({
+          sql: `INSERT INTO furniture (id, room_id, label, shape, kind, width, depth, height, elevation, x, y, rotation, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            f.id,
+            room.id,
+            f.label,
+            f.shape,
+            f.kind ?? "generic",
+            f.width,
+            f.depth,
+            f.height ?? 60,
+            f.elevation ?? 0,
+            f.x,
+            f.y,
+            f.rotation,
+            f.color,
+          ],
+        })),
       ],
-    });
-    await db.execute({ sql: "DELETE FROM furniture WHERE room_id = ?", args: [room.id] });
-    for (const f of room.furniture) {
-      await db.execute({
-        sql: `INSERT INTO furniture (id, room_id, label, shape, kind, width, depth, height, elevation, x, y, rotation, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [
-          f.id,
-          room.id,
-          f.label,
-          f.shape,
-          f.kind ?? "generic",
-          f.width,
-          f.depth,
-          f.height ?? 60,
-          f.elevation ?? 0,
-          f.x,
-          f.y,
-          f.rotation,
-          f.color,
-        ],
-      });
-    }
+      "write",
+    );
     return json(200, room);
   }
 

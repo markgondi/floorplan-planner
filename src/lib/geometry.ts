@@ -1,6 +1,9 @@
 export interface Point {
   x: number;
   y: number;
+  // On an outline corner: the wall that starts here has a fixed length. It was measured, so
+  // only typing a new length for that wall may change it.
+  fixed?: boolean;
 }
 
 export function distance(a: Point, b: Point): number {
@@ -55,6 +58,8 @@ export interface WallRun {
   from: Point;
   to: Point;
   length: number;
+  // The wall's length was measured and must not change (see Point.fixed).
+  fixed?: boolean;
 }
 
 function angleOf(a: Point, b: Point): number {
@@ -105,39 +110,71 @@ function wallRunsWithCorners(points: Point[]): WallRunWithCorners[] {
 // several points) into single runs, so each straight wall gets one length label
 // instead of one per sub-segment.
 export function mergeCollinearWalls(points: Point[]): WallRun[] {
-  return wallRunsWithCorners(points).map(({ from, to, length }) => ({ from, to, length }));
+  return wallRunsWithCorners(points).map(({ from, to, length }) => ({ from, to, length, fixed: !!from.fixed }));
 }
 
-// Makes one wall of the outline exactly `length` long (canvas px). One of its corners slides
-// along the wall — its end, or its start when `moveStart` — and carries the neighbouring wall
-// with it, so that wall keeps its length and direction; the wall beyond absorbs the change.
-// In a square-cornered room that's the whole side moving out or in, like pushing a wall.
-// Typing the old length back puts everything back where it was.
-export function setWallLength(points: Point[], runIndex: number, length: number, moveStart = false): Point[] {
+// Makes one wall of the outline exactly `length` long (canvas px) and fixes it there.
+//
+// One of its corners slides along the wall — its end, or its start when `moveStart` — taking
+// the walls beyond it along unchanged, until the nearest wall running the same way that isn't
+// fixed, which lengthens or shortens to make up the difference. In a square-cornered room
+// that's the whole side moving in or out. Fixed walls are never resized: if every wall that
+// could take up the change is fixed (in both directions), nothing moves and `blockedBy` lists
+// those walls. Typing the old length back puts everything back where it was.
+export function setWallLength(
+  points: Point[],
+  runIndex: number,
+  length: number,
+  moveStart = false,
+): { points: Point[]; blockedBy: number[] | null } {
   const runs = wallRunsWithCorners(points);
   const run = runs[runIndex];
-  if (!run || runs.length < 3 || !(length > 0) || !(run.length > 0)) return points;
+  if (!run || runs.length < 3 || !(length > 0) || !(run.length > 0)) return { points, blockedBy: null };
   const n = points.length;
-  const shift = (length - run.length) * (moveStart ? -1 : 1);
-  const dx = ((run.to.x - run.from.x) / run.length) * shift;
-  const dy = ((run.to.y - run.from.y) / run.length) * shift;
-
-  // Corners that move: from this wall's moving corner round to the far end of the neighbour.
-  const moved = new Set<number>();
-  if (moveStart) {
-    const prev = runs[(runIndex - 1 + runs.length) % runs.length];
-    for (let i = prev.startIndex; ; i = (i + 1) % n) {
-      moved.add(i);
-      if (i === run.startIndex) break;
+  const m = runs.length;
+  const ux = (run.to.x - run.from.x) / run.length;
+  const uy = (run.to.y - run.from.y) / run.length;
+  const delta = length - run.length;
+  const cornersBetween = (from: number, to: number) => {
+    const set = new Set<number>();
+    for (let i = from; ; i = (i + 1) % n) {
+      set.add(i);
+      if (i === to) break;
     }
-  } else {
-    const next = runs[(runIndex + 1) % runs.length];
-    for (let i = run.endIndex; ; i = (i + 1) % n) {
-      moved.add(i);
-      if (i === next.endIndex) break;
+    return set;
+  };
+
+  const fixedInTheWay: number[] = [];
+  for (const backwards of moveStart ? [true, false] : [false, true]) {
+    for (let k = 1; k < m; k++) {
+      const j = backwards ? (runIndex - k + m) % m : (runIndex + k) % m;
+      const other = runs[j];
+      const ox = (other.to.x - other.from.x) / (other.length || 1);
+      const oy = (other.to.y - other.from.y) / (other.length || 1);
+      if (Math.abs(ox * uy - oy * ux) > 0.02) continue; // not running the same way
+      if (other.from.fixed) {
+        if (!fixedInTheWay.includes(j)) fixedInTheWay.push(j);
+        continue;
+      }
+      const sameWay = ox * ux + oy * uy > 0;
+      const shift = backwards ? -delta : delta;
+      const otherLength = other.length + (backwards === sameWay ? shift : -shift);
+      if (otherLength <= 1) continue; // too short to take up that much
+
+      const moved = backwards ? cornersBetween(other.endIndex, run.startIndex) : cornersBetween(run.endIndex, other.startIndex);
+      const next = points.map((p, i) => (moved.has(i) ? { ...p, x: p.x + ux * shift, y: p.y + uy * shift } : p));
+      next[run.startIndex] = { ...next[run.startIndex], fixed: true };
+      return { points: next, blockedBy: null };
     }
   }
-  return points.map((p, i) => (moved.has(i) ? { x: p.x + dx, y: p.y + dy } : p));
+  return { points, blockedBy: fixedInTheWay };
+}
+
+// Marks one wall of the outline as fixed (measured) or free to change.
+export function setWallFixed(points: Point[], runIndex: number, fixed: boolean): Point[] {
+  const run = wallRunsWithCorners(points)[runIndex];
+  if (!run) return points;
+  return points.map((p, i) => (i === run.startIndex ? { ...p, fixed } : p));
 }
 
 export function snapAngle(degrees: number, step = 15): number {

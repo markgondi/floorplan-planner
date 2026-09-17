@@ -16,7 +16,7 @@ import { FURNITURE_PRESETS } from "./lib/types";
 import type { Point } from "./lib/geometry";
 import type { Unit } from "./lib/units";
 import { formatDimensions, formatLength, formatScale } from "./lib/units";
-import { computeScale, mergeCollinearWalls, polygonPerimeterSegments, pxToReal, setWallLength } from "./lib/geometry";
+import { computeScale, mergeCollinearWalls, polygonPerimeterSegments, pxToReal, setWallFixed, setWallLength } from "./lib/geometry";
 import {
   createComment,
   createFolder,
@@ -87,6 +87,8 @@ export default function App() {
   const [selectedWallIndex, setSelectedWallIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState<string | null>(null);
+  // A short explanation when something you asked for can't be done (e.g. a fixed wall is in the way).
+  const [notice, setNotice] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [presets, setPresets] = useState<FurniturePreset[]>(loadPresets);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
@@ -115,6 +117,8 @@ export default function App() {
   const [zoom, setZoom] = useState(0.6);
   const [cursor, setCursor] = useState<Point | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaves = useRef(new Map<string, Room>());
+  const savesInFlight = useRef(new Set<string>());
   const didInit = useRef(false);
   const canvasRef = useRef<FloorplanCanvasHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -211,22 +215,37 @@ export default function App() {
 
   function updateActiveRoom(patch: Partial<Room>) {
     if (!activeRoomId) return;
-    setRooms((prev) => prev.map((r) => (r.id === activeRoomId ? { ...r, ...patch } : r)));
+    const roomId = activeRoomId;
+    setRooms((prev) => {
+      const next = prev.map((r) => (r.id === roomId ? { ...r, ...patch } : r));
+      // Remember the room exactly as it now stands, so the save sends every change, not just
+      // the last one.
+      const room = next.find((r) => r.id === roomId);
+      if (room) pendingSaves.current.set(roomId, room);
+      return next;
+    });
 
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      const updated = rooms.find((r) => r.id === activeRoomId);
-      const next = updated ? { ...updated, ...patch } : null;
-      if (!next) return;
-      saveRoom(next)
+    saveTimer.current = setTimeout(flushSaves, 500);
+  }
+
+  // Sends waiting room saves, one at a time per room: a save that starts while another for the
+  // same room is still going waits for it, then sends the newest version.
+  function flushSaves() {
+    for (const [roomId, room] of pendingSaves.current) {
+      if (savesInFlight.current.has(roomId)) continue;
+      pendingSaves.current.delete(roomId);
+      savesInFlight.current.add(roomId);
+      saveRoom(room)
+        // one retry after a beat — serverless functions cold-starting is common and transient
+        .catch(() => new Promise((resolve) => setTimeout(resolve, 800)).then(() => saveRoom(room)))
         .then(() => setSyncError(null))
-        .catch(() =>
-          // one retry after a beat — serverless functions cold-starting is common and transient
-          saveRoom(next)
-            .then(() => setSyncError(null))
-            .catch(() => setSyncError("Failed to save changes to the server. Your edits are still here locally — try again in a moment.")),
-        );
-    }, 500);
+        .catch(() => setSyncError("Failed to save changes to the server. Your edits are still here locally — try again in a moment."))
+        .finally(() => {
+          savesInFlight.current.delete(roomId);
+          if (pendingSaves.current.has(roomId)) flushSaves();
+        });
+    }
   }
 
   async function handleCreateRoom(folderId?: string | null) {
@@ -402,11 +421,33 @@ export default function App() {
     setWallStart(null);
   }
 
-  // Typing a wall's length makes that wall exactly that long — nothing else is rescaled.
-  function handleWallLengthChange(lengthCm: number) {
-    if (!activeRoom || selectedWallIndex === null) return;
+  // Typing a wall's length makes that wall exactly that long and fixes it there. Other walls
+  // only move if they aren't fixed; if a fixed wall would have to change, nothing happens and
+  // the notice says which walls are in the way.
+  function setWallLengthCm(wallIndex: number, lengthCm: number) {
+    if (!activeRoom) return;
     const lengthPx = lengthCm / (activeRoom.scalePxPerUnit || 1);
-    updateActiveRoom({ outline: setWallLength(activeRoom.outline, selectedWallIndex, lengthPx, moveWallStart) });
+    const result = setWallLength(activeRoom.outline, wallIndex, lengthPx, moveWallStart);
+    if (result.blockedBy) {
+      const walls = result.blockedBy.map((i) => `Wall ${i + 1}`).join(", ");
+      setNotice(
+        `Wall ${wallIndex + 1} can't be ${formatLength(lengthCm, activeRoom.unit)} without changing a fixed wall` +
+          (walls ? ` (${walls})` : "") +
+          ". Select one of those walls and click Fixed to free it, then try again.",
+      );
+      return;
+    }
+    setNotice(null);
+    updateActiveRoom({ outline: result.points });
+  }
+
+  function handleWallLengthChange(lengthCm: number) {
+    if (selectedWallIndex !== null) setWallLengthCm(selectedWallIndex, lengthCm);
+  }
+
+  function handleToggleWallFixed() {
+    if (!activeRoom || selectedWallIndex === null || !selectedWall) return;
+    updateActiveRoom({ outline: setWallFixed(activeRoom.outline, selectedWallIndex, !selectedWall.fixed) });
   }
 
   function handleUndoOutlinePoint() {
@@ -424,11 +465,13 @@ export default function App() {
   // its lengths are re-measured. Walls are part of that same drawing, so they're re-measured
   // too and stay joined to it. Everything else keeps the real size it was given, so it's
   // redrawn larger or smaller — which is asked about first, as it can look like items shrank.
-  function applyScale(nextScale: number) {
+  function applyScale(nextScale: number, measuredWallIndex: number | null) {
     if (!activeRoom || !(nextScale > 0)) return;
     const ratio = nextScale / (activeRoom.scalePxPerUnit || 1);
+    // The wall just measured is now exact, so it's fixed.
+    const outline = measuredWallIndex !== null ? setWallFixed(activeRoom.outline, measuredWallIndex, true) : activeRoom.outline;
     if (Math.abs(ratio - 1) < 1e-9) {
-      updateActiveRoom({ scalePxPerUnit: nextScale });
+      updateActiveRoom({ scalePxPerUnit: nextScale, outline });
       return;
     }
     const walls = activeRoom.furniture.filter((f) => f.kind === "wall").length;
@@ -445,17 +488,33 @@ export default function App() {
     }
     updateActiveRoom({
       scalePxPerUnit: nextScale,
+      outline,
       furniture: activeRoom.furniture.map((f) => (f.kind === "wall" ? { ...f, width: f.width * ratio } : f)),
     });
   }
 
-  function handleCalibrate(pixelDistance: number, realLengthCm: number) {
-    applyScale(computeScale(pixelDistance, realLengthCm));
+  // The Scale tool. A wall measured between its own two corners is fixed at that length. Once
+  // a room has fixed walls its scale can't change (that would change them), so measuring a
+  // wall then simply sets that wall's length.
+  function handleCalibrate(pixelDistance: number, realLengthCm: number, from: Point, to: Point) {
+    if (!activeRoom) return;
+    const near = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y) < 0.5;
+    const wallIndex = wallRuns.findIndex((r) => (near(r.from, from) && near(r.to, to)) || (near(r.from, to) && near(r.to, from)));
+    if (wallRuns.some((r) => r.fixed)) {
+      if (wallIndex >= 0) setWallLengthCm(wallIndex, realLengthCm);
+      else setNotice("This room has fixed wall lengths, so its scale can't change. Click a wall's two corners to set that wall's length instead.");
+      return;
+    }
+    applyScale(computeScale(pixelDistance, realLengthCm), wallIndex >= 0 ? wallIndex : null);
   }
 
   function handleSetGridScale() {
+    if (wallRuns.some((r) => r.fixed)) {
+      setNotice("This room has fixed wall lengths, so its scale can't change.");
+      return;
+    }
     // Major grid squares are 100 canvas px apart; this makes one square exactly 1 metre.
-    applyScale(1);
+    applyScale(1, null);
   }
 
   function handleAddPreset(preset: FurniturePreset) {
@@ -592,6 +651,15 @@ export default function App() {
         folderName={folders.find((f) => f.id === activeRoom?.folderId)?.name ?? null}
       />
 
+      {notice && (
+        <div className="sync-banner">
+          <span>{notice}</span>
+          <button className="sync-banner__dismiss" onClick={() => setNotice(null)}>
+            OK
+          </button>
+        </div>
+      )}
+
       {syncError && (
         <div className="sync-banner">
           <span>{syncError}</span>
@@ -642,6 +710,17 @@ export default function App() {
                   title="Which end of the wall moves when you change its length (marked on the plan). The wall next to that end moves with it."
                 >
                   {moveWallStart ? "◂ Start moves" : "End moves ▸"}
+                </button>
+                <button
+                  className={selectedWall.fixed ? "btn-ghost btn-ghost--active" : "btn-ghost"}
+                  onClick={handleToggleWallFixed}
+                  title={
+                    selectedWall.fixed
+                      ? "This wall's length is fixed — nothing else can change it. Click to free it."
+                      : "This wall's length can change when you set other walls. Click to fix it."
+                  }
+                >
+                  {selectedWall.fixed ? "Fixed" : "Not fixed"}
                 </button>
               </>
             )}
