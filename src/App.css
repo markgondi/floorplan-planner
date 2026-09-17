@@ -811,7 +811,7 @@
 
 .room-list__row {
   display: flex;
-  gap: 3px;
+  gap: 2px;
   align-items: center;
 }
 
@@ -822,7 +822,7 @@
   background: transparent;
   border: 1px solid transparent;
   font-size: 12px;
-  padding: 5px 8px;
+  padding: 5px 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -844,14 +844,14 @@
 
 .room-list__folder-select {
   font-size: 10px;
-  max-width: 74px;
-  padding: 3px 4px;
+  max-width: 64px;
+  padding: 3px 2px;
   border-color: var(--color-hairline);
   color: var(--color-line-soft);
 }
 
-.room-list__rename, .room-list__delete {
-  width: 24px;
+.room-list__rename, .room-list__duplicate, .room-list__delete {
+  width: 22px;
   padding: 0;
   height: 24px;
   font-size: 10px;
@@ -861,7 +861,13 @@
   color: var(--color-line-soft);
 }
 
-.room-list__rename:hover {
+.room-list__duplicate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.room-list__rename:hover, .room-list__duplicate:hover {
   border-color: var(--color-hairline);
   transform: none;
   box-shadow: none;

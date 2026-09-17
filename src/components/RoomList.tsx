@@ -7,6 +7,7 @@ interface RoomListProps {
   onSelect: (id: string) => void;
   onCreate: (folderId?: string | null) => void;
   onRename: (id: string) => void;
+  onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
   onMoveToFolder: (roomId: string, folderId: string | null) => void;
   onCreateFolder: () => void;
@@ -20,6 +21,7 @@ function RoomRow({
   isActive,
   onSelect,
   onRename,
+  onDuplicate,
   onDelete,
   onMoveToFolder,
 }: {
@@ -28,6 +30,7 @@ function RoomRow({
   isActive: boolean;
   onSelect: (id: string) => void;
   onRename: (id: string) => void;
+  onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
   onMoveToFolder: (roomId: string, folderId: string | null) => void;
 }) {
@@ -64,6 +67,20 @@ function RoomRow({
         ✎
       </button>
       <button
+        className="room-list__duplicate"
+        title="Duplicate room — a copy with its outline, scale, plan image and all items"
+        aria-label="Duplicate room"
+        onClick={(e) => {
+          e.stopPropagation();
+          onDuplicate(room.id);
+        }}
+      >
+        <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.1">
+          <rect x="3.5" y="3.5" width="7" height="7" rx="1" />
+          <path d="M8.5 1.5h-6a1 1 0 00-1 1v6" />
+        </svg>
+      </button>
+      <button
         className="room-list__delete"
         title="Delete room"
         onClick={(e) => {
@@ -84,6 +101,7 @@ export default function RoomList({
   onSelect,
   onCreate,
   onRename,
+  onDuplicate,
   onDelete,
   onMoveToFolder,
   onCreateFolder,
@@ -128,6 +146,7 @@ export default function RoomList({
                   isActive={room.id === activeRoomId}
                   onSelect={onSelect}
                   onRename={onRename}
+                  onDuplicate={onDuplicate}
                   onDelete={onDelete}
                   onMoveToFolder={onMoveToFolder}
                 />
@@ -148,6 +167,7 @@ export default function RoomList({
             isActive={room.id === activeRoomId}
             onSelect={onSelect}
             onRename={onRename}
+            onDuplicate={onDuplicate}
             onDelete={onDelete}
             onMoveToFolder={onMoveToFolder}
           />

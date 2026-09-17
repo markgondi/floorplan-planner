@@ -302,6 +302,39 @@ export default function App() {
     }
   }
 
+  // Copies a room — outline, scale, units, ceiling, plan image and every item (with fresh
+  // ids so the two rooms stay independent) — into the same folder, and opens the copy.
+  // Comments stay with the original, since they're feedback on that room.
+  async function handleDuplicateRoom(id: string) {
+    const source = rooms.find((r) => r.id === id);
+    if (!source) return;
+    const name = window.prompt("Name for the copy:", `${source.name.trim()} (copy)`);
+    if (!name) return;
+    let createdId: string | null = null;
+    try {
+      const created = await apiCreateRoom(name, source.folderId);
+      createdId = created.id;
+      const copy: Room = {
+        ...source,
+        id: created.id,
+        name,
+        outline: source.outline.map((p) => ({ ...p })),
+        furniture: source.furniture.map((f) => ({ ...f, id: crypto.randomUUID(), roomId: created.id })),
+      };
+      await saveRoom(copy).catch(() => saveRoom(copy));
+      setRooms((prev) => {
+        const next = [...prev];
+        next.splice(next.findIndex((r) => r.id === id) + 1, 0, copy);
+        return next;
+      });
+      setActiveRoomId(copy.id);
+    } catch {
+      // Don't leave an empty half-copy behind.
+      if (createdId) deleteRoom(createdId).catch(() => {});
+      setSyncError("Failed to duplicate the room on the server — nothing was copied. Try again in a moment.");
+    }
+  }
+
   async function handleDeleteRoom(id: string) {
     const room = rooms.find((r) => r.id === id);
     if (!room) return;
@@ -681,6 +714,7 @@ export default function App() {
             onSelect={setActiveRoomId}
             onCreate={handleCreateRoom}
             onRename={handleRenameRoom}
+            onDuplicate={handleDuplicateRoom}
             onDelete={handleDeleteRoom}
             onMoveToFolder={handleMoveRoomToFolder}
             onCreateFolder={handleCreateFolder}
