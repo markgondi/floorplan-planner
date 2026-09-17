@@ -223,6 +223,16 @@
   color: var(--color-line-soft);
 }
 
+/* A selected wall's length: the thing being edited, so it reads as active. */
+.field:has(.field__wall-length) {
+  border-color: var(--color-accent);
+}
+
+.field input.field__wall-length {
+  width: 70px;
+  font-weight: 600;
+}
+
 /* ─── Buttons ──────────────────────────────────────────────────────────── */
 
 .btn-ghost {

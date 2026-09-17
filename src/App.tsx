@@ -16,7 +16,7 @@ import { FURNITURE_PRESETS } from "./lib/types";
 import type { Point } from "./lib/geometry";
 import type { Unit } from "./lib/units";
 import { formatDimensions, formatLength, formatScale } from "./lib/units";
-import { computeScale, mergeCollinearWalls, polygonPerimeterSegments, pxToReal } from "./lib/geometry";
+import { computeScale, mergeCollinearWalls, polygonPerimeterSegments, pxToReal, setWallLength } from "./lib/geometry";
 import {
   createComment,
   createFolder,
@@ -110,6 +110,8 @@ export default function App() {
   const [wallStart, setWallStart] = useState<Point | null>(null);
   // Ids of inner walls drawn since this room was opened, newest last, so Undo Wall can step back.
   const [drawnWalls, setDrawnWalls] = useState<string[]>([]);
+  // Which corner of a selected wall slides when its length is typed in: its end, or its start.
+  const [moveWallStart, setMoveWallStart] = useState(false);
   const [zoom, setZoom] = useState(0.6);
   const [cursor, setCursor] = useState<Point | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -400,6 +402,13 @@ export default function App() {
     setWallStart(null);
   }
 
+  // Typing a wall's length makes that wall exactly that long — nothing else is rescaled.
+  function handleWallLengthChange(lengthCm: number) {
+    if (!activeRoom || selectedWallIndex === null) return;
+    const lengthPx = lengthCm / (activeRoom.scalePxPerUnit || 1);
+    updateActiveRoom({ outline: setWallLength(activeRoom.outline, selectedWallIndex, lengthPx, moveWallStart) });
+  }
+
   function handleUndoOutlinePoint() {
     if (!activeRoom || activeRoom.outline.length === 0) return;
     updateActiveRoom({ outline: activeRoom.outline.slice(0, -1) });
@@ -613,6 +622,29 @@ export default function App() {
                 Labels {showLabels ? "On" : "Off"}
               </button>
             )}
+            {view === "top" && selectedWall && selectedWallIndex !== null && (
+              <>
+                <label className="field mono" title="Type this wall's length and press Enter — the wall becomes exactly that long">
+                  <span>Wall {selectedWallIndex + 1}</span>
+                  <DimensionInput
+                    key={`${activeRoom.id}-${selectedWallIndex}`}
+                    valueCm={selectedWall.length * (activeRoom.scalePxPerUnit || 1)}
+                    unit={activeRoom.unit}
+                    onChange={handleWallLengthChange}
+                    commitOnEnter
+                    className="field__wall-length"
+                  />
+                  <span className="field__unit">{activeRoom.unit}</span>
+                </label>
+                <button
+                  className="btn-ghost"
+                  onClick={() => setMoveWallStart((v) => !v)}
+                  title="Which end of the wall moves when you change its length (marked on the plan). The wall next to that end moves with it."
+                >
+                  {moveWallStart ? "◂ Start moves" : "End moves ▸"}
+                </button>
+              </>
+            )}
             {view === "side" && wallCount > 0 && (
               <div className="stepper mono" title="Which wall this elevation is looking at">
                 <button
@@ -773,6 +805,7 @@ export default function App() {
                 onAddComment={handleAddComment}
                 selectedWallIndex={selectedWallIndex}
                 onSelectWall={setSelectedWallIndex}
+                movingWallCorner={moveWallStart ? "start" : "end"}
                 zoom={zoom}
                 onZoomChange={(updater) => setZoom((z) => updater(z))}
                 onCursorMove={setCursor}

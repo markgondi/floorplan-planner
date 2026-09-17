@@ -35,6 +35,8 @@ interface FloorplanCanvasProps {
   onAddComment: (point: Point) => void;
   selectedWallIndex: number | null;
   onSelectWall: (index: number | null) => void;
+  // Which corner of the selected wall moves when its length is typed in — marked on the plan.
+  movingWallCorner: "start" | "end";
   zoom: number;
   onZoomChange: (updater: (zoom: number) => number) => void;
   onCursorMove: (point: Point | null) => void;
@@ -502,6 +504,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     onAddComment,
     selectedWallIndex,
     onSelectWall,
+    movingWallCorner,
     zoom,
     onZoomChange,
     onCursorMove,
@@ -1025,6 +1028,20 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
                       strokeLinecap="round"
                       opacity="0.9"
                     />
+                  )}
+                  {/* The corner that moves when this wall's length is typed in. */}
+                  {isSelectedWall && (
+                    <circle
+                      cx={movingWallCorner === "start" ? run.from.x : run.to.x}
+                      cy={movingWallCorner === "start" ? run.from.y : run.to.y}
+                      r={7}
+                      fill="var(--color-canvas)"
+                      stroke="var(--color-accent)"
+                      strokeWidth={2.5}
+                      pointerEvents="none"
+                    >
+                      <title>This corner moves when you type a new length</title>
+                    </circle>
                   )}
                   <line
                     x1={run.from.x}
