@@ -5,7 +5,7 @@ import type { LibraryEntry } from "../lib/library";
 import type { Unit } from "../lib/units";
 import { formatDimensions } from "../lib/units";
 import DimensionInput from "./DimensionInput";
-import { rotateBy } from "../lib/geometry";
+import { ROTATE_STEP, ROTATE_STEP_LARGE, rotateBy } from "../lib/geometry";
 import AngleInput from "./AngleInput";
 
 interface FurniturePanelProps {
@@ -197,9 +197,9 @@ export default function FurniturePanel({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onUpdate(item.id, { rotation: rotateBy(item.rotation, e.shiftKey ? -15 : -1) });
+                    onUpdate(item.id, { rotation: rotateBy(item.rotation, -(e.shiftKey ? ROTATE_STEP_LARGE : ROTATE_STEP)) });
                   }}
-                  title="Rotate 1° anticlockwise (Shift: 15°)"
+                  title={`Rotate ${ROTATE_STEP}° anticlockwise (Shift: ${ROTATE_STEP_LARGE}°)`}
                 >
                   ⟲
                 </button>
@@ -207,9 +207,9 @@ export default function FurniturePanel({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onUpdate(item.id, { rotation: rotateBy(item.rotation, e.shiftKey ? 15 : 1) });
+                    onUpdate(item.id, { rotation: rotateBy(item.rotation, e.shiftKey ? ROTATE_STEP_LARGE : ROTATE_STEP) });
                   }}
-                  title="Rotate 1° clockwise (Shift: 15°)"
+                  title={`Rotate ${ROTATE_STEP}° clockwise (Shift: ${ROTATE_STEP_LARGE}°)`}
                 >
                   ⟳
                 </button>

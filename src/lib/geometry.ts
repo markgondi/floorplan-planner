@@ -194,6 +194,10 @@ export function setWallFixed(points: Point[], runIndex: number, fixed: boolean):
   return points.map((p, i) => (i === run.startIndex ? { ...p, fixed } : p));
 }
 
+// How far one click of a rotate button (or [ / ]) turns an item, and with Shift held.
+export const ROTATE_STEP = 5;
+export const ROTATE_STEP_LARGE = 15;
+
 // Turns a rotation by `delta` degrees, kept within 0–359.9 and to a tenth of a degree.
 export function rotateBy(rotation: number, delta: number): number {
   const turned = Math.round((((rotation + delta) % 360) + 360) % 360 * 10) / 10;

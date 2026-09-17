@@ -8,6 +8,8 @@ import {
   polygonPerimeterSegments,
   pxToReal,
   rotateBy,
+  ROTATE_STEP,
+  ROTATE_STEP_LARGE,
 } from "../lib/geometry";
 import type { Comment, Furniture } from "../lib/types";
 import { itemColor, itemOrigin } from "../lib/types";
@@ -994,7 +996,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     onFurnitureChange(selectedFurnitureId, { rotation: rotateBy(item.rotation, delta) });
   }
 
-  // [ and ] turn the selected item 1° (15° with Shift), without reaching for the buttons.
+  // [ and ] turn the selected item 5° (15° with Shift), without reaching for the buttons.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.code !== "BracketLeft" && e.code !== "BracketRight") return;
@@ -1002,7 +1004,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return;
       if (!selectedFurnitureId) return;
       e.preventDefault();
-      rotateSelected((e.code === "BracketLeft" ? -1 : 1) * (e.shiftKey ? 15 : 1));
+      rotateSelected((e.code === "BracketLeft" ? -1 : 1) * (e.shiftKey ? ROTATE_STEP_LARGE : ROTATE_STEP));
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1468,8 +1470,8 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
         <div className="canvas-dock canvas-dock--right">
           <button
             className="canvas-dock__btn"
-            onClick={(e) => rotateSelected(e.shiftKey ? -15 : -1)}
-            title="Rotate 1° anticlockwise (Shift: 15°) — or press ["
+            onClick={(e) => rotateSelected(-(e.shiftKey ? ROTATE_STEP_LARGE : ROTATE_STEP))}
+            title={`Rotate ${ROTATE_STEP}° anticlockwise (Shift: ${ROTATE_STEP_LARGE}°) — or press [`}
           >
             ⟲
           </button>
@@ -1480,8 +1482,8 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
           />
           <button
             className="canvas-dock__btn"
-            onClick={(e) => rotateSelected(e.shiftKey ? 15 : 1)}
-            title="Rotate 1° clockwise (Shift: 15°) — or press ]"
+            onClick={(e) => rotateSelected(e.shiftKey ? ROTATE_STEP_LARGE : ROTATE_STEP)}
+            title={`Rotate ${ROTATE_STEP}° clockwise (Shift: ${ROTATE_STEP_LARGE}°) — or press ]`}
           >
             ⟳
           </button>
