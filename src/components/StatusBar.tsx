@@ -1,6 +1,6 @@
 import type { Point } from "../lib/geometry";
 import type { Unit } from "../lib/units";
-import { formatLength } from "../lib/units";
+import { formatLength, formatScale } from "../lib/units";
 
 interface StatusBarProps {
   view: "top" | "side";
@@ -41,7 +41,7 @@ export default function StatusBar({
         {view === "top" && <Cell label="Zoom" value={`${(zoom * 100).toFixed(0)}%`} />}
         <Cell
           label="Scale"
-          value={scalePxPerUnit ? `1px = ${formatLength(scalePxPerUnit, unit, 3)}` : "not set"}
+          value={scalePxPerUnit ? `1px = ${formatScale(scalePxPerUnit, unit)}` : "not set"}
           accent={!scalePxPerUnit}
         />
         {view === "top" && (

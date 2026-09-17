@@ -261,23 +261,90 @@ function segmentBoxGap(a: Point, b: Point, hw: number, hh: number): number {
   return Math.min(toBox(a), toBox(b), toSegment(-hw, -hh), toSegment(hw, -hh), toSegment(-hw, hh), toSegment(hw, hh));
 }
 
-// Where a wall's length label goes: outside the room, parallel to the wall and clear of its
-// line, like a dimension on a drawing. A label longer than a short wall would run into the
-// neighbouring walls, so it slides along its wall — then steps further out — until every
-// wall line is at least WALL_DIM_MIN_GAP away. `thicknessPx` keeps it clear of a wall drawn
-// with real thickness rather than as a line.
-function placeWallLabel(run: WallRun, outline: Point[], text: string, thicknessPx = 0) {
+// The side of an outline wall that faces away from the room.
+function outwardNormal(run: Pick<WallRun, "from" | "to" | "length">, outline: Point[]): Point {
   const len = run.length || 1;
   const ux = (run.to.x - run.from.x) / len;
   const uy = (run.to.y - run.from.y) / len;
   const midX = (run.from.x + run.to.x) / 2;
   const midY = (run.from.y + run.to.y) / 2;
-  let nx = -uy;
-  let ny = ux;
-  if (pointInPolygon({ x: midX + nx * 3, y: midY + ny * 3 }, outline)) {
-    nx = -nx;
-    ny = -ny;
+  return pointInPolygon({ x: midX - uy * 3, y: midY + ux * 3 }, outline) ? { x: uy, y: -ux } : { x: -uy, y: ux };
+}
+
+interface WallLine {
+  from: Point;
+  to: Point;
+  thickness: number;
+}
+
+// Splits an outline wall into the stretches between the inner walls that meet it (measured
+// to their faces), so a wall shared by two rooms can be read room by room. One stretch means
+// nothing meets it.
+function roomSpans(run: WallRun, walls: WallLine[]): { start: number; end: number }[] {
+  const len = run.length;
+  const ux = (run.to.x - run.from.x) / (len || 1);
+  const uy = (run.to.y - run.from.y) / (len || 1);
+  const cuts: { start: number; end: number }[] = [];
+  for (const w of walls) {
+    const wl = Math.hypot(w.to.x - w.from.x, w.to.y - w.from.y) || 1;
+    const sin = Math.abs(((w.to.x - w.from.x) / wl) * uy - ((w.to.y - w.from.y) / wl) * ux);
+    if (sin < 0.3) continue; // runs alongside this wall rather than meeting it
+    const half = w.thickness / 2 / sin;
+    for (const end of [w.from, w.to]) {
+      const along = (end.x - run.from.x) * ux + (end.y - run.from.y) * uy;
+      const off = Math.abs(-(end.x - run.from.x) * uy + (end.y - run.from.y) * ux);
+      if (off <= w.thickness / 2 + 2 && along - half > 1 && along + half < len - 1) {
+        cuts.push({ start: along - half, end: along + half });
+      }
+    }
   }
+  cuts.sort((a, b) => a.start - b.start);
+  const spans: { start: number; end: number }[] = [];
+  let pos = 0;
+  for (const cut of cuts) {
+    if (cut.start > pos + 0.5) spans.push({ start: pos, end: cut.start });
+    pos = Math.max(pos, cut.end);
+  }
+  if (len > pos + 0.5) spans.push({ start: pos, end: len });
+  return spans;
+}
+
+// A wall length on the plan. Styled with attributes so it survives PNG export.
+function DimText({ place, text, opacity }: { place: { x: number; y: number; angle: number }; text: string; opacity?: number }) {
+  return (
+    <text
+      transform={`translate(${place.x} ${place.y}) rotate(${place.angle})`}
+      className="mono floorplan-canvas__dim-label"
+      fontFamily="monospace"
+      fontSize={WALL_DIM_SIZE}
+      letterSpacing={`${WALL_DIM_TRACKING}em`}
+      fill="var(--color-line-soft)"
+      opacity={opacity}
+      textAnchor="middle"
+      dominantBaseline="central"
+      paintOrder="stroke"
+      stroke="var(--color-canvas)"
+      strokeWidth={3}
+      strokeLinejoin="round"
+    >
+      {text}
+    </text>
+  );
+}
+
+// Where a wall's length label goes: outside the room, parallel to the wall and clear of its
+// line, like a dimension on a drawing. A label longer than a short wall would run into the
+// neighbouring walls, so it slides along its wall — then steps further out — until every
+// wall line is at least WALL_DIM_MIN_GAP away and it doesn't cover a label already placed
+// (`avoid`). `thicknessPx` keeps it clear of a wall drawn with real thickness rather than as
+// a line.
+function placeWallLabel(run: WallRun, outline: Point[], text: string, thicknessPx = 0, avoid: Point[][] = []) {
+  const len = run.length || 1;
+  const ux = (run.to.x - run.from.x) / len;
+  const uy = (run.to.y - run.from.y) / len;
+  const midX = (run.from.x + run.to.x) / 2;
+  const midY = (run.from.y + run.to.y) / 2;
+  const { x: nx, y: ny } = outwardNormal(run, outline);
 
   const angle = readableAngle((Math.atan2(uy, ux) * 180) / Math.PI);
   const cos = Math.cos((angle * Math.PI) / 180);
@@ -291,16 +358,60 @@ function placeWallLabel(run: WallRun, outline: Point[], text: string, thicknessP
   };
 
   const base = WALL_DIM_CLEARANCE + thicknessPx / 2 + hh;
-  for (const out of [0, 8, 16]) {
-    for (let step = 0; step * 3 <= hw; step++) {
-      for (const along of step === 0 ? [0] : [step * 3, -step * 3]) {
-        const x = midX + nx * (base + out) + ux * along;
-        const y = midY + ny * (base + out) + uy * along;
-        if (clearance(x, y) >= WALL_DIM_MIN_GAP) return { x, y, angle };
+  // Near the wall first; crowded corners (a column's short sides, say) search further out,
+  // and as a last resort accept sitting on a line rather than on top of another label.
+  const passes = avoid.length
+    ? [
+        { outs: [0, 8, 16, 24, 32], minGap: WALL_DIM_MIN_GAP },
+        { outs: [40, 48, 56, 64, 72], minGap: WALL_DIM_MIN_GAP },
+        { outs: [0, 8, 16, 24, 32, 40, 48, 56, 64, 72], minGap: -Infinity },
+      ]
+    : [{ outs: [0, 8, 16], minGap: WALL_DIM_MIN_GAP }];
+  for (const pass of passes) {
+    for (const out of pass.outs) {
+      for (let step = 0; step * 3 <= hw * (avoid.length ? 1.5 : 1); step++) {
+        for (const along of step === 0 ? [0] : [step * 3, -step * 3]) {
+          const x = midX + nx * (base + out) + ux * along;
+          const y = midY + ny * (base + out) + uy * along;
+          if (clearance(x, y) < pass.minGap) continue;
+          const box = labelBox({ x, y, angle }, text);
+          if (avoid.some((other) => boxesOverlap(box, other))) continue;
+          return { x, y, angle };
+        }
       }
     }
   }
   return { x: midX + nx * base, y: midY + ny * base, angle };
+}
+
+// The corners of a wall length label's text, with a pixel of breathing room.
+function labelBox(place: { x: number; y: number; angle: number }, text: string): Point[] {
+  const hw = (text.length * (MONO_CHAR_WIDTH + WALL_DIM_TRACKING) * WALL_DIM_SIZE) / 2 + 2;
+  const hh = WALL_DIM_SIZE / 2 + 1;
+  const cos = Math.cos((place.angle * Math.PI) / 180);
+  const sin = Math.sin((place.angle * Math.PI) / 180);
+  return [
+    [-hw, -hh],
+    [hw, -hh],
+    [hw, hh],
+    [-hw, hh],
+  ].map(([lx, ly]) => ({ x: place.x + lx * cos - ly * sin, y: place.y + lx * sin + ly * cos }));
+}
+
+// Separating-axis test for two convex quadrilaterals.
+function boxesOverlap(a: Point[], b: Point[]): boolean {
+  for (const poly of [a, b]) {
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i];
+      const q = poly[(i + 1) % poly.length];
+      const ax = -(q.y - p.y);
+      const ay = q.x - p.x;
+      const pa = a.map((v) => v.x * ax + v.y * ay);
+      const pb = b.map((v) => v.x * ax + v.y * ay);
+      if (Math.max(...pa) < Math.min(...pb) || Math.max(...pb) < Math.min(...pa)) return false;
+    }
+  }
+  return true;
 }
 
 // Where an item's name sits and which way it runs: centred on the item and laid along its
@@ -447,6 +558,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
       return {
         from: { x: f.x - Math.cos(r) * half, y: f.y - Math.sin(r) * half },
         to: { x: f.x + Math.cos(r) * half, y: f.y + Math.sin(r) * half },
+        thickness: f.depth / scale,
       };
     });
 
@@ -637,6 +749,67 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
   const totalPerimeterPx = segments.reduce((sum, seg) => sum + seg.length, 0);
   const wallRuns = mergeCollinearWalls(outline);
 
+  // Every outline wall's length, laid out together so no two labels cover each other: longer
+  // walls are placed first and shorter walls' labels move out of their way. Where inner walls
+  // meet a wall, each room's stretch gets its own length, with ticks where they divide, and
+  // the overall length sits one row further out.
+  const wallDimensions = (() => {
+    const labels: { key: string; place: { x: number; y: number; angle: number }; text: string; opacity?: number }[] = [];
+    const ticks: { key: string; x1: number; y1: number; x2: number; y2: number }[] = [];
+    if (outline.length < 2) return { labels, ticks };
+    const measure = (px: number) => (scalePxPerUnit ? formatLength(pxToReal(px, scalePxPerUnit), unit) : `${px.toFixed(0)} px`);
+    const placed: Point[][] = [];
+    const place = (key: string, run: WallRun, text: string, thicknessPx = 0, opacity?: number) => {
+      const spot = placeWallLabel(run, outline, text, thicknessPx, placed);
+      placed.push(labelBox(spot, text));
+      labels.push({ key, place: spot, text, opacity });
+
+      // A label that had to move well away from its wall (crowded short walls) gets a thin
+      // leader back to the wall, drawn from the wall to the edge of the text.
+      const onWall = closestPointOnSegment(spot, run.from, run.to);
+      const usual = WALL_DIM_CLEARANCE + thicknessPx / 2 + WALL_DIM_SIZE / 2;
+      if (distance(onWall, spot) > usual + 12) {
+        const cos = Math.cos((spot.angle * Math.PI) / 180);
+        const sin = Math.sin((spot.angle * Math.PI) / 180);
+        const lx = (onWall.x - spot.x) * cos + (onWall.y - spot.y) * sin;
+        const ly = -(onWall.x - spot.x) * sin + (onWall.y - spot.y) * cos;
+        const hw = (text.length * (MONO_CHAR_WIDTH + WALL_DIM_TRACKING) * WALL_DIM_SIZE) / 2 + 2;
+        const k = 1 / Math.max(Math.abs(lx) / hw, Math.abs(ly) / (WALL_DIM_SIZE / 2 + 2));
+        const ex = lx * k, ey = ly * k;
+        ticks.push({ key: `${key}-leader`, x1: onWall.x, y1: onWall.y, x2: spot.x + ex * cos - ey * sin, y2: spot.y + ex * sin + ey * cos });
+      }
+    };
+
+    const firstRow: { key: string; run: WallRun }[] = [];
+    const overalls: { key: string; run: WallRun }[] = [];
+    wallRuns.forEach((run, i) => {
+      const spans = roomSpans(run, innerWallLines);
+      if (spans.length <= 1) {
+        firstRow.push({ key: `wall-${i}`, run });
+        return;
+      }
+      const ux = (run.to.x - run.from.x) / run.length;
+      const uy = (run.to.y - run.from.y) / run.length;
+      const at = (t: number) => ({ x: run.from.x + ux * t, y: run.from.y + uy * t });
+      const out = outwardNormal(run, outline);
+      const reach = WALL_DIM_CLEARANCE + WALL_DIM_SIZE + 2;
+      spans.forEach((span, k) => {
+        firstRow.push({ key: `wall-${i}-${k}`, run: { from: at(span.start), to: at(span.end), length: span.end - span.start } });
+      });
+      spans
+        .flatMap((span) => [span.start, span.end])
+        .filter((t) => t > 0.5 && t < run.length - 0.5)
+        .forEach((t, k) => {
+          const p = at(t);
+          ticks.push({ key: `tick-${i}-${k}`, x1: p.x + out.x * 3, y1: p.y + out.y * 3, x2: p.x + out.x * reach, y2: p.y + out.y * reach });
+        });
+      overalls.push({ key: `wall-${i}-overall`, run });
+    });
+    firstRow.sort((a, b) => b.run.length - a.run.length).forEach(({ key, run }) => place(key, run, measure(run.length)));
+    overalls.forEach(({ key, run }) => place(key, run, measure(run.length), 2 * (WALL_DIM_SIZE + 6), 0.7));
+    return { labels, ticks };
+  })();
+
   useImperativeHandle(ref, () => ({
     exportPng: () => {
       if (svgRef.current) {
@@ -678,7 +851,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
         // Asked in the room's own unit, so a length read off a drawing in mm isn't taken as cm.
         // Suggests what the line measures at the current scale, if one is set.
         const measuredPx = distance(next[0], next[1]);
-        const current = scalePxPerUnit ? String(Number(fromCm(measuredPx * scalePxPerUnit, unit).toFixed(unit === "mm" ? 0 : 2))) : "";
+        const current = scalePxPerUnit ? String(Number(fromCm(measuredPx * scalePxPerUnit, unit).toFixed(unit === "mm" ? 0 : unit === "cm" ? 1 : 3))) : "";
         const answer = window.prompt(`Real length of the line you just measured, in ${unit}:`, current);
         const realLength = Number((answer ?? "").trim().replace(",", "."));
         if (realLength > 0) {
@@ -822,30 +995,16 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
             />
           )}
 
-          {outline.length > 1 &&
-            wallRuns.map((run, i) => {
-              const text = scalePxPerUnit ? formatLength(pxToReal(run.length, scalePxPerUnit), unit) : `${run.length.toFixed(0)} px`;
-              const place = placeWallLabel(run, outline, text);
-              return (
-                <text
-                  key={i}
-                  transform={`translate(${place.x} ${place.y}) rotate(${place.angle})`}
-                  className="mono floorplan-canvas__dim-label"
-                  fontFamily="monospace"
-                  fontSize={WALL_DIM_SIZE}
-                  letterSpacing={`${WALL_DIM_TRACKING}em`}
-                  fill="var(--color-line-soft)"
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  paintOrder="stroke"
-                  stroke="var(--color-canvas)"
-                  strokeWidth={3}
-                  strokeLinejoin="round"
-                >
-                  {text}
-                </text>
-              );
-            })}
+          {outline.length > 1 && (
+            <g>
+              {wallDimensions.ticks.map((t) => (
+                <line key={t.key} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} stroke="var(--color-line-soft)" strokeWidth={0.8} opacity={0.8} />
+              ))}
+              {wallDimensions.labels.map((l) => (
+                <DimText key={l.key} place={l.place} text={l.text} opacity={l.opacity} />
+              ))}
+            </g>
+          )}
 
           {outline.length > 1 &&
             wallRuns.map((run, i) => {

@@ -15,7 +15,7 @@ import type { Comment, Folder, Room, Furniture, FurniturePreset } from "./lib/ty
 import { FURNITURE_PRESETS } from "./lib/types";
 import type { Point } from "./lib/geometry";
 import type { Unit } from "./lib/units";
-import { formatDimensions, formatLength } from "./lib/units";
+import { formatDimensions, formatLength, formatScale } from "./lib/units";
 import { computeScale, mergeCollinearWalls, polygonPerimeterSegments, pxToReal } from "./lib/geometry";
 import {
   createComment,
@@ -425,7 +425,7 @@ export default function App() {
     const walls = activeRoom.furniture.filter((f) => f.kind === "wall").length;
     const others = activeRoom.furniture.length - walls;
     if (walls + others > 0) {
-      const lines = [`Set the scale to 1 px = ${formatLength(nextScale, activeRoom.unit, 3)}?`, "", "Outline lengths will be re-measured at the new scale."];
+      const lines = [`Set the scale to 1 px = ${formatScale(nextScale, activeRoom.unit)}?`, "", "Outline lengths will be re-measured at the new scale."];
       if (walls) lines.push(`${walls} wall${walls === 1 ? "" : "s"} will be re-measured too, staying joined to the outline.`);
       if (others) {
         lines.push(
