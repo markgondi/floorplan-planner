@@ -22,10 +22,10 @@ export function libraryKey(item: Pick<Furniture, "label" | "kind" | "width" | "d
   return [item.label.trim().toLowerCase(), item.kind, item.width.toFixed(1), item.depth.toFixed(1), item.height.toFixed(1)].join("|");
 }
 
-// Inner walls are drawn to whatever length a room needs, so each one would be a new entry;
-// they're not kept in the library.
+// Inner walls and marked-out areas are sized to fit each room, so every one would be a new
+// entry; they're not kept in the library.
 export function belongsInLibrary(item: Pick<Furniture, "kind" | "label">): boolean {
-  return item.kind !== "wall" && item.label.trim() !== "";
+  return item.kind !== "wall" && item.kind !== "zone" && item.label.trim() !== "";
 }
 
 // A library entry as shown in the Items panel: with the names of the rooms it's placed in.

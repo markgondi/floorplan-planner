@@ -92,7 +92,9 @@ export default function SideView({
 
   // Resolve each item to a horizontal position (cm along the viewed wall) and whether
   // it belongs to this wall's elevation at all.
+  // Marked-out floor areas have no height to show in an elevation.
   const placed = furniture
+    .filter((item) => item.kind !== "zone")
     .map((item) => {
       if (selectedWall) {
         const alongCm = pxToReal(projectAlongWall({ x: item.x, y: item.y }, selectedWall), scale);

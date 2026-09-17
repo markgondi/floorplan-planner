@@ -143,10 +143,12 @@ export default function FurniturePanel({
                   <span>D</span>
                   <DimensionInput valueCm={preset.depth} unit={unit} onChange={(v) => onUpdatePreset(preset.id, { depth: v })} />
                 </label>
-                <label>
-                  <span>H</span>
-                  <DimensionInput valueCm={preset.height} unit={unit} onChange={(v) => onUpdatePreset(preset.id, { height: v })} />
-                </label>
+                {preset.kind !== "zone" && (
+                  <label>
+                    <span>H</span>
+                    <DimensionInput valueCm={preset.height} unit={unit} onChange={(v) => onUpdatePreset(preset.id, { height: v })} />
+                  </label>
+                )}
               </div>
               <button
                 className="furniture-panel__preset-add"
@@ -181,11 +183,13 @@ export default function FurniturePanel({
                   <DimensionInput valueCm={item.depth} unit={unit} onChange={(v) => onUpdate(item.id, { depth: v })} onClick={(e) => e.stopPropagation()} commitOnEnter />
                   <span className="furniture-panel__unit">{unit}</span>
                 </label>
-                <label>
-                  <span>H</span>
-                  <DimensionInput valueCm={item.height} unit={unit} onChange={(v) => onUpdate(item.id, { height: v })} onClick={(e) => e.stopPropagation()} commitOnEnter />
-                  <span className="furniture-panel__unit">{unit}</span>
-                </label>
+                {item.kind !== "zone" && (
+                  <label>
+                    <span>H</span>
+                    <DimensionInput valueCm={item.height} unit={unit} onChange={(v) => onUpdate(item.id, { height: v })} onClick={(e) => e.stopPropagation()} commitOnEnter />
+                    <span className="furniture-panel__unit">{unit}</span>
+                  </label>
+                )}
               </div>
               <div className="furniture-panel__rotate mono">
                 <span>Rotate</span>

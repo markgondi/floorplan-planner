@@ -129,6 +129,25 @@ function FurnitureGlyph({ item, scalePxPerUnit }: { item: Furniture; scalePxPerU
     return base(0, 1);
   }
 
+  if (item.kind === "zone") {
+    // A marked-out floor area: a see-through wash with a dashed edge, so the items standing
+    // in it stay visible.
+    return (
+      <rect
+        x={x}
+        y={y}
+        width={wPx}
+        height={dPx}
+        rx={2}
+        fill={itemColor(item)}
+        fillOpacity={0.16}
+        stroke={itemColor(item)}
+        strokeWidth={1.5}
+        strokeDasharray="7 4"
+      />
+    );
+  }
+
   if (item.kind === "door") {
     // Standard architectural door: an opening in the wall, the leaf shown open at 90°,
     // and a quarter-circle showing its swing back to the closed position.
@@ -893,6 +912,39 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     setDragOffset({ x: p.x - item.x, y: p.y - item.y });
   }
 
+  // Dragging an area's corner: the opposite corner stays put and the area stretches to the
+  // pointer (in the area's own rotated frame), to the nearest 5 cm.
+  const [resizing, setResizing] = useState<{ id: string; sx: number; sy: number } | null>(null);
+  function startResizeZone(e: React.MouseEvent, item: Furniture, sx: number, sy: number) {
+    e.stopPropagation();
+    e.preventDefault();
+    setResizing({ id: item.id, sx, sy });
+  }
+  function resizeZoneTo(p: Point) {
+    if (!resizing) return;
+    const item = furniture.find((f) => f.id === resizing.id);
+    if (!item) return;
+    const s = scalePxPerUnit || 1;
+    const r = (item.rotation * Math.PI) / 180;
+    const cos = Math.cos(r);
+    const sin = Math.sin(r);
+    // Pointer and the fixed (opposite) corner in the area's local frame, centred on 0,0.
+    const lx = (p.x - item.x) * cos + (p.y - item.y) * sin;
+    const ly = -(p.x - item.x) * sin + (p.y - item.y) * cos;
+    const fx = (-resizing.sx * item.width) / 2 / s;
+    const fy = (-resizing.sy * item.depth) / 2 / s;
+    const widthCm = Math.max(10, Math.round((Math.max(0, (lx - fx) * resizing.sx) * s) / 5) * 5);
+    const depthCm = Math.max(10, Math.round((Math.max(0, (ly - fy) * resizing.sy) * s) / 5) * 5);
+    const cx = fx + (resizing.sx * widthCm) / 2 / s;
+    const cy = fy + (resizing.sy * depthCm) / 2 / s;
+    onFurnitureChange(item.id, {
+      width: widthCm,
+      depth: depthCm,
+      x: item.x + cx * cos - cy * sin,
+      y: item.y + cx * sin + cy * cos,
+    });
+  }
+
   function handleScrollMouseDown(e: React.MouseEvent) {
     // Shift-clicking a free point shouldn't also select text on the page.
     if (e.shiftKey && (mode === "walls" || mode === "scale")) e.preventDefault();
@@ -919,12 +971,17 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     setPointer(p);
     setShiftHeld(e.shiftKey);
     setCrosshair(mode === "walls" || mode === "scale" ? snapPoint(p, e.shiftKey) : { ...p, kind: "free" });
+    if (resizing) {
+      resizeZoneTo(p);
+      return;
+    }
     if (!dragId) return;
     onFurnitureChange(dragId, { x: p.x - dragOffset.x, y: p.y - dragOffset.y });
   }
 
   function handleMouseUp() {
     setDragId(null);
+    setResizing(null);
     panState.current = null;
     setIsPanning(false);
   }
@@ -1094,8 +1151,9 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
             <circle key={i} cx={p.x} cy={p.y} r="5" fill="var(--color-danger)" />
           ))}
 
-          {furniture.map((item) => {
+          {[...furniture.filter((f) => f.kind === "zone"), ...furniture.filter((f) => f.kind !== "zone")].map((item) => {
             const isSelected = item.id === selectedFurnitureId;
+            const isZone = item.kind === "zone";
             return (
               <g
                 key={item.id}
@@ -1103,9 +1161,13 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
                 transform={`translate(${item.x} ${item.y}) rotate(${item.rotation})`}
                 onMouseDown={(e) => startDragFurniture(e, item)}
                 style={{ cursor: mode === "arrange" ? "move" : mode === "select" ? "pointer" : "default" }}
-                filter="url(#dropShadow)"
+                filter={isZone ? undefined : "url(#dropShadow)"}
               >
-                <title>{`${item.label} — L × D × H ${formatDimensions([item.width, item.depth, item.height], unit)}`}</title>
+                <title>
+                  {isZone
+                    ? `${item.label} — L × D ${formatDimensions([item.width, item.depth], unit)}. Drag a corner to resize.`
+                    : `${item.label} — L × D × H ${formatDimensions([item.width, item.depth, item.height], unit)}`}
+                </title>
                 <FurnitureGlyph item={item} scalePxPerUnit={scalePxPerUnit} />
                 {isSelected && (
                   <rect
@@ -1119,6 +1181,32 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
                     className="floorplan-canvas__marching"
                   />
                 )}
+                {/* A selected area gets a handle on each corner to drag it to size. */}
+                {isSelected &&
+                  isZone &&
+                  (mode === "select" || mode === "arrange") &&
+                  ([
+                    [-1, -1],
+                    [1, -1],
+                    [1, 1],
+                    [-1, 1],
+                  ] as const).map(([sx, sy]) => {
+                    const size = 9 / zoom;
+                    return (
+                      <rect
+                        key={`${sx},${sy}`}
+                        x={(sx * item.width) / 2 / (scalePxPerUnit || 1) - size / 2}
+                        y={(sy * item.depth) / 2 / (scalePxPerUnit || 1) - size / 2}
+                        width={size}
+                        height={size}
+                        fill="var(--color-canvas)"
+                        stroke="var(--color-accent)"
+                        strokeWidth={1.5 / zoom}
+                        style={{ cursor: sx === sy ? "nwse-resize" : "nesw-resize" }}
+                        onMouseDown={(e) => startResizeZone(e, item, sx, sy)}
+                      />
+                    );
+                  })}
               </g>
             );
           })}
@@ -1140,7 +1228,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
 
                 const dimsTokens = [
                   ...(origin ? [`${origin.toUpperCase()} ·`] : []),
-                  ...dimensionTokens([item.width, item.depth, item.height], unit),
+                  ...dimensionTokens(item.kind === "zone" ? [item.width, item.depth] : [item.width, item.depth, item.height], unit),
                 ];
                 const gap = 2.5;
                 const dims = fitLines(dimsTokens, frame.length, frame.thickness - nameBlock - gap, Math.min(8.5, name.size * 0.85), 5.5);

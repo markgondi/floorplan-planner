@@ -1020,7 +1020,10 @@ export default function App() {
         }
         selectionLabel={
           selectedItem
-            ? `${selectedItem.label} · ${formatDimensions([selectedItem.width, selectedItem.depth, selectedItem.height], unit)}`
+            ? `${selectedItem.label} · ${formatDimensions(
+                selectedItem.kind === "zone" ? [selectedItem.width, selectedItem.depth] : [selectedItem.width, selectedItem.depth, selectedItem.height],
+                unit,
+              )}`
             : null
         }
         wallLabel={

@@ -2,7 +2,8 @@ import type { Point } from "./geometry";
 import type { Unit } from "./units";
 
 export type FurnitureShape = "rect" | "circle" | "lshape";
-export type FurnitureKind = "generic" | "screen" | "shelf" | "bench" | "wall" | "door" | "reader";
+// "zone" is a marked-out floor area (a staging area, say), not a physical item.
+export type FurnitureKind = "generic" | "screen" | "shelf" | "bench" | "wall" | "door" | "reader" | "zone";
 
 export interface Furniture {
   id: string;
@@ -42,6 +43,8 @@ export const KIND_COLOR: Record<FurnitureKind, string> = {
   shelf: "#8a7f6e",
   bench: "#9a8a72",
   generic: "#7d8288",
+  // Bright on purpose: an area has to stand apart from the items drawn on top of it.
+  zone: "#e3b23c",
 };
 
 export const KIND_LABEL: Record<FurnitureKind, string> = {
@@ -52,6 +55,7 @@ export const KIND_LABEL: Record<FurnitureKind, string> = {
   shelf: "Shelf",
   bench: "Bench",
   generic: "Custom",
+  zone: "Area",
 };
 
 // Colours people can give an item, chosen to read well on both the dark and light canvas.
@@ -93,6 +97,7 @@ export const FURNITURE_PRESETS: FurniturePreset[] = [
   { id: "shelf-unit", label: "Shelf Unit", kind: "shelf", width: 90, depth: 35, height: 180, elevation: 0, color: KIND_COLOR.shelf },
   { id: "bench", label: "Bench", kind: "bench", width: 120, depth: 45, height: 45, elevation: 0, color: KIND_COLOR.bench },
   { id: "custom-item", label: "Custom Item", kind: "generic", width: 60, depth: 60, height: 60, elevation: 0, color: KIND_COLOR.generic },
+  { id: "staging-area", label: "Staging Area", kind: "zone", width: 200, depth: 150, height: 0, elevation: 0, color: KIND_COLOR.zone },
 ];
 
 export interface Room {
