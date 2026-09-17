@@ -762,7 +762,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
   // the overall length sits one row further out.
   const wallDimensions = (() => {
     const labels: { key: string; place: { x: number; y: number; angle: number }; text: string; opacity?: number; fixed?: boolean }[] = [];
-    const ticks: { key: string; x1: number; y1: number; x2: number; y2: number }[] = [];
+    const ticks: { key: string; x1: number; y1: number; x2: number; y2: number; dotted?: boolean }[] = [];
     if (outline.length < 2) return { labels, ticks };
     const measure = (px: number) => (scalePxPerUnit ? formatLength(pxToReal(px, scalePxPerUnit), unit) : `${px.toFixed(0)} px`);
     const placed: Point[][] = [];
@@ -783,7 +783,13 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
         const hw = (text.length * (MONO_CHAR_WIDTH + WALL_DIM_TRACKING) * WALL_DIM_SIZE) / 2 + 2;
         const k = 1 / Math.max(Math.abs(lx) / hw, Math.abs(ly) / (WALL_DIM_SIZE / 2 + 2));
         const ex = lx * k, ey = ly * k;
-        ticks.push({ key: `${key}-leader`, x1: onWall.x, y1: onWall.y, x2: spot.x + ex * cos - ey * sin, y2: spot.y + ex * sin + ey * cos });
+        const end = { x: spot.x + ex * cos - ey * sin, y: spot.y + ex * sin + ey * cos };
+        // Skip a leader that would cut back across the room — it reads as part of the drawing
+        // (a stray wall or shadow) rather than a pointer to the label.
+        const crossesRoom = Array.from({ length: 12 }, (_, i) => (i + 1) / 12).some((t) =>
+          pointInPolygon({ x: onWall.x + (end.x - onWall.x) * t, y: onWall.y + (end.y - onWall.y) * t }, outline),
+        );
+        if (!crossesRoom) ticks.push({ key: `${key}-leader`, x1: onWall.x, y1: onWall.y, x2: end.x, y2: end.y, dotted: true });
       }
     };
 
@@ -1005,7 +1011,17 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
           {outline.length > 1 && (
             <g>
               {wallDimensions.ticks.map((t) => (
-                <line key={t.key} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} stroke="var(--color-line-soft)" strokeWidth={0.8} opacity={0.8} />
+                <line
+                  key={t.key}
+                  x1={t.x1}
+                  y1={t.y1}
+                  x2={t.x2}
+                  y2={t.y2}
+                  stroke="var(--color-line-soft)"
+                  strokeWidth={0.8}
+                  strokeDasharray={t.dotted ? "1.5 2" : undefined}
+                  opacity={0.8}
+                />
               ))}
               {wallDimensions.labels.map((l) => (
                 <DimText key={l.key} place={l.place} text={l.text} opacity={l.opacity} fixed={l.fixed} />
