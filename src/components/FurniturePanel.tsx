@@ -5,7 +5,8 @@ import type { LibraryEntry } from "../lib/library";
 import type { Unit } from "../lib/units";
 import { formatDimensions } from "../lib/units";
 import DimensionInput from "./DimensionInput";
-import { snapAngle } from "../lib/geometry";
+import { rotateBy } from "../lib/geometry";
+import AngleInput from "./AngleInput";
 
 interface FurniturePanelProps {
   furniture: Furniture[];
@@ -196,19 +197,19 @@ export default function FurniturePanel({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onUpdate(item.id, { rotation: snapAngle(item.rotation - 15) });
+                    onUpdate(item.id, { rotation: rotateBy(item.rotation, e.shiftKey ? -15 : -1) });
                   }}
-                  title="Rotate 15° anticlockwise"
+                  title="Rotate 1° anticlockwise (Shift: 15°)"
                 >
                   ⟲
                 </button>
-                <span className="furniture-panel__angle">{(((item.rotation % 360) + 360) % 360)}°</span>
+                <AngleInput className="furniture-panel__angle" degrees={item.rotation} onChange={(rotation) => onUpdate(item.id, { rotation })} />
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onUpdate(item.id, { rotation: snapAngle(item.rotation + 15) });
+                    onUpdate(item.id, { rotation: rotateBy(item.rotation, e.shiftKey ? 15 : 1) });
                   }}
-                  title="Rotate 15° clockwise"
+                  title="Rotate 1° clockwise (Shift: 15°)"
                 >
                   ⟳
                 </button>

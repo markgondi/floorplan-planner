@@ -194,6 +194,12 @@ export function setWallFixed(points: Point[], runIndex: number, fixed: boolean):
   return points.map((p, i) => (i === run.startIndex ? { ...p, fixed } : p));
 }
 
+// Turns a rotation by `delta` degrees, kept within 0–359.9 and to a tenth of a degree.
+export function rotateBy(rotation: number, delta: number): number {
+  const turned = Math.round((((rotation + delta) % 360) + 360) % 360 * 10) / 10;
+  return turned >= 360 ? 0 : turned;
+}
+
 export function snapAngle(degrees: number, step = 15): number {
   return Math.round(degrees / step) * step;
 }

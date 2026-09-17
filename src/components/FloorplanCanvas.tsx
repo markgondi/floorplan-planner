@@ -7,13 +7,14 @@ import {
   pointInPolygon,
   polygonPerimeterSegments,
   pxToReal,
-  snapAngle,
+  rotateBy,
 } from "../lib/geometry";
 import type { Comment, Furniture } from "../lib/types";
 import { itemColor, itemOrigin } from "../lib/types";
 import type { Unit } from "../lib/units";
 import { dimensionTokens, formatDimensions, formatLength, fromCm, toCm } from "../lib/units";
 import { exportSvgAsPng } from "../lib/export";
+import AngleInput from "./AngleInput";
 
 type Mode = "select" | "walls" | "scale" | "arrange" | "comment";
 export type WallTool = "outline" | "inner";
@@ -990,8 +991,22 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     if (!selectedFurnitureId) return;
     const item = furniture.find((f) => f.id === selectedFurnitureId);
     if (!item) return;
-    onFurnitureChange(selectedFurnitureId, { rotation: snapAngle(item.rotation + delta) });
+    onFurnitureChange(selectedFurnitureId, { rotation: rotateBy(item.rotation, delta) });
   }
+
+  // [ and ] turn the selected item 1° (15° with Shift), without reaching for the buttons.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.code !== "BracketLeft" && e.code !== "BracketRight") return;
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return;
+      if (!selectedFurnitureId) return;
+      e.preventDefault();
+      rotateSelected((e.code === "BracketLeft" ? -1 : 1) * (e.shiftKey ? 15 : 1));
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   function fitToView() {
     const container = scrollRef.current;
@@ -1451,13 +1466,23 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
 
       {selectedFurnitureId && (
         <div className="canvas-dock canvas-dock--right">
-          <button className="canvas-dock__btn" onClick={() => rotateSelected(-15)} title="Rotate 15° anticlockwise">
+          <button
+            className="canvas-dock__btn"
+            onClick={(e) => rotateSelected(e.shiftKey ? -15 : -1)}
+            title="Rotate 1° anticlockwise (Shift: 15°) — or press ["
+          >
             ⟲
           </button>
-          <span className="canvas-dock__readout mono">
-            {(((furniture.find((f) => f.id === selectedFurnitureId)?.rotation ?? 0) % 360) + 360) % 360}°
-          </span>
-          <button className="canvas-dock__btn" onClick={() => rotateSelected(15)} title="Rotate 15° clockwise">
+          <AngleInput
+            className="canvas-dock__readout canvas-dock__angle mono"
+            degrees={furniture.find((f) => f.id === selectedFurnitureId)?.rotation ?? 0}
+            onChange={(rotation) => onFurnitureChange(selectedFurnitureId, { rotation })}
+          />
+          <button
+            className="canvas-dock__btn"
+            onClick={(e) => rotateSelected(e.shiftKey ? 15 : 1)}
+            title="Rotate 1° clockwise (Shift: 15°) — or press ]"
+          >
             ⟳
           </button>
         </div>
