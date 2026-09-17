@@ -126,7 +126,7 @@ export function setWallLength(
   runIndex: number,
   length: number,
   moveStart = false,
-): { points: Point[]; blockedBy: number[] | null } {
+): { points: Point[]; blockedBy: number[] | null; leaned?: { wall: number; fixedWalls: number[] } } {
   const runs = wallRunsWithCorners(points);
   const run = runs[runIndex];
   if (!run || runs.length < 3 || !(length > 0) || !(run.length > 0)) return { points, blockedBy: null };
@@ -166,6 +166,23 @@ export function setWallLength(
       next[run.startIndex] = { ...next[run.startIndex], fixed: true };
       return { points: next, blockedBy: null };
     }
+  }
+
+  // Every wall running the same way is fixed. Measured lengths don't guarantee square corners,
+  // so let the wall at the moving corner take up the difference by leaning, if it isn't fixed:
+  // only that one corner moves, and every fixed wall keeps its length.
+  for (const atStart of moveStart ? [true, false] : [false, true]) {
+    const neighbourIndex = atStart ? (runIndex - 1 + m) % m : (runIndex + 1) % m;
+    const neighbour = runs[neighbourIndex];
+    if (neighbour.from.fixed) continue;
+    const corner = atStart ? run.startIndex : run.endIndex;
+    const shift = atStart ? -delta : delta;
+    const moved = { ...points[corner], x: points[corner].x + ux * shift, y: points[corner].y + uy * shift };
+    const far = atStart ? neighbour.from : neighbour.to;
+    if (Math.hypot(far.x - moved.x, far.y - moved.y) <= 1) continue; // would collapse the wall
+    const next = points.map((p, i) => (i === corner ? moved : p));
+    next[run.startIndex] = { ...next[run.startIndex], fixed: true };
+    return { points: next, blockedBy: null, leaned: { wall: neighbourIndex, fixedWalls: fixedInTheWay } };
   }
   return { points, blockedBy: fixedInTheWay };
 }

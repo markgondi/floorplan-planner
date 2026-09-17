@@ -437,7 +437,16 @@ export default function App() {
       );
       return;
     }
-    setNotice(null);
+    if (result.leaned) {
+      const fixedWalls = result.leaned.fixedWalls.map((i) => `Wall ${i + 1}`).join(", ");
+      setNotice(
+        `Wall ${wallIndex + 1} is now ${formatLength(lengthCm, activeRoom.unit)}. ` +
+          (fixedWalls ? `${fixedWalls} ${result.leaned.fixedWalls.length === 1 ? "is" : "are"} fixed, so ` : "") +
+          `Wall ${result.leaned.wall + 1} (not fixed) now sits slightly off square to meet it.`,
+      );
+    } else {
+      setNotice(null);
+    }
     updateActiveRoom({ outline: result.points });
   }
 
