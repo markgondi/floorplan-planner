@@ -12,7 +12,7 @@ import {
 import type { Comment, Furniture } from "../lib/types";
 import { itemColor, itemOrigin } from "../lib/types";
 import type { Unit } from "../lib/units";
-import { dimensionTokens, formatDimensions, formatLength, toCm } from "../lib/units";
+import { dimensionTokens, formatDimensions, formatLength, fromCm, toCm } from "../lib/units";
 import { exportSvgAsPng } from "../lib/export";
 
 type Mode = "select" | "walls" | "scale" | "arrange" | "comment";
@@ -29,7 +29,7 @@ interface FloorplanCanvasProps {
   imageUrl: string | null;
   mode: Mode;
   onOutlineChange: (points: Point[]) => void;
-  onCalibrate: (pixelDistance: number, realLength: number) => void;
+  onCalibrate: (pixelDistance: number, realLengthCm: number) => void;
   onFurnitureChange: (id: string, patch: Partial<Furniture>) => void;
   onSelectFurniture: (id: string | null) => void;
   onAddComment: (point: Point) => void;
@@ -675,10 +675,14 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     } else if (mode === "scale") {
       const next = [...calibrationPoints, p];
       if (next.length === 2) {
-        const realLengthStr = window.prompt("Enter the real-world length of this segment (cm):", "100");
-        const realLength = Number(realLengthStr);
+        // Asked in the room's own unit, so a length read off a drawing in mm isn't taken as cm.
+        // Suggests what the line measures at the current scale, if one is set.
+        const measuredPx = distance(next[0], next[1]);
+        const current = scalePxPerUnit ? String(Number(fromCm(measuredPx * scalePxPerUnit, unit).toFixed(unit === "mm" ? 0 : 2))) : "";
+        const answer = window.prompt(`Real length of the line you just measured, in ${unit}:`, current);
+        const realLength = Number((answer ?? "").trim().replace(",", "."));
         if (realLength > 0) {
-          onCalibrate(distance(next[0], next[1]), realLength);
+          onCalibrate(measuredPx, toCm(realLength, unit));
         }
         setCalibrationPoints([]);
       } else {

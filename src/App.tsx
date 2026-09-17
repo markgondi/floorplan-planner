@@ -411,13 +411,42 @@ export default function App() {
     updateActiveRoom({ outline: [] });
   }
 
-  function handleCalibrate(pixelDistance: number, realLength: number) {
-    updateActiveRoom({ scalePxPerUnit: computeScale(pixelDistance, realLength) });
+  // Changes the room's scale. The outline is traced over the plan, so its corners stay put and
+  // its lengths are re-measured. Walls are part of that same drawing, so they're re-measured
+  // too and stay joined to it. Everything else keeps the real size it was given, so it's
+  // redrawn larger or smaller — which is asked about first, as it can look like items shrank.
+  function applyScale(nextScale: number) {
+    if (!activeRoom || !(nextScale > 0)) return;
+    const ratio = nextScale / (activeRoom.scalePxPerUnit || 1);
+    if (Math.abs(ratio - 1) < 1e-9) {
+      updateActiveRoom({ scalePxPerUnit: nextScale });
+      return;
+    }
+    const walls = activeRoom.furniture.filter((f) => f.kind === "wall").length;
+    const others = activeRoom.furniture.length - walls;
+    if (walls + others > 0) {
+      const lines = [`Set the scale to 1 px = ${formatLength(nextScale, activeRoom.unit, 3)}?`, "", "Outline lengths will be re-measured at the new scale."];
+      if (walls) lines.push(`${walls} wall${walls === 1 ? "" : "s"} will be re-measured too, staying joined to the outline.`);
+      if (others) {
+        lines.push(
+          `${others} item${others === 1 ? " keeps its" : "s keep their"} real size, so ${others === 1 ? "it" : "they"}'ll be drawn at ${Math.round(100 / ratio)}% of the current size on the plan.`,
+        );
+      }
+      if (!window.confirm(lines.join("\n"))) return;
+    }
+    updateActiveRoom({
+      scalePxPerUnit: nextScale,
+      furniture: activeRoom.furniture.map((f) => (f.kind === "wall" ? { ...f, width: f.width * ratio } : f)),
+    });
+  }
+
+  function handleCalibrate(pixelDistance: number, realLengthCm: number) {
+    applyScale(computeScale(pixelDistance, realLengthCm));
   }
 
   function handleSetGridScale() {
     // Major grid squares are 100 canvas px apart; this makes one square exactly 1 metre.
-    updateActiveRoom({ scalePxPerUnit: 1 });
+    applyScale(1);
   }
 
   function handleAddPreset(preset: FurniturePreset) {
