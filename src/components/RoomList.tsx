@@ -8,6 +8,7 @@ interface RoomListProps {
   onCreate: (folderId?: string | null) => void;
   onRename: (id: string) => void;
   onDuplicate: (id: string) => void;
+  onToggleLock: (id: string) => void;
   onDelete: (id: string) => void;
   onMoveToFolder: (roomId: string, folderId: string | null) => void;
   onCreateFolder: () => void;
@@ -22,6 +23,7 @@ function RoomRow({
   onSelect,
   onRename,
   onDuplicate,
+  onToggleLock,
   onDelete,
   onMoveToFolder,
 }: {
@@ -31,6 +33,7 @@ function RoomRow({
   onSelect: (id: string) => void;
   onRename: (id: string) => void;
   onDuplicate: (id: string) => void;
+  onToggleLock: (id: string) => void;
   onDelete: (id: string) => void;
   onMoveToFolder: (roomId: string, folderId: string | null) => void;
 }) {
@@ -81,8 +84,20 @@ function RoomRow({
         </svg>
       </button>
       <button
+        className={room.locked ? "room-list__lock room-list__lock--on" : "room-list__lock"}
+        title={room.locked ? "Locked — click to unlock and allow changes" : "Lock this room so it can't be changed"}
+        aria-label={room.locked ? `Unlock ${room.name}` : `Lock ${room.name}`}
+        aria-pressed={!!room.locked}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleLock(room.id);
+        }}
+      >
+        {room.locked ? "🔒" : "🔓"}
+      </button>
+      <button
         className="room-list__delete"
-        title="Delete room"
+        title={room.locked ? "Unlock the room before deleting it" : "Delete room"}
         onClick={(e) => {
           e.stopPropagation();
           onDelete(room.id);
@@ -102,6 +117,7 @@ export default function RoomList({
   onCreate,
   onRename,
   onDuplicate,
+  onToggleLock,
   onDelete,
   onMoveToFolder,
   onCreateFolder,
@@ -147,6 +163,7 @@ export default function RoomList({
                   onSelect={onSelect}
                   onRename={onRename}
                   onDuplicate={onDuplicate}
+                  onToggleLock={onToggleLock}
                   onDelete={onDelete}
                   onMoveToFolder={onMoveToFolder}
                 />
@@ -168,6 +185,7 @@ export default function RoomList({
             onSelect={onSelect}
             onRename={onRename}
             onDuplicate={onDuplicate}
+            onToggleLock={onToggleLock}
             onDelete={onDelete}
             onMoveToFolder={onMoveToFolder}
           />

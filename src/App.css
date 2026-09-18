@@ -860,7 +860,7 @@
   color: var(--color-line-soft);
 }
 
-.room-list__rename, .room-list__duplicate, .room-list__delete {
+.room-list__rename, .room-list__duplicate, .room-list__lock, .room-list__delete {
   width: 22px;
   padding: 0;
   height: 24px;
@@ -877,7 +877,13 @@
   justify-content: center;
 }
 
-.room-list__rename:hover, .room-list__duplicate:hover {
+/* A locked room: the padlock stays lit so the state is obvious at a glance. */
+.room-list__lock--on {
+  color: var(--color-accent);
+  border-color: var(--color-hairline);
+}
+
+.room-list__rename:hover, .room-list__duplicate:hover, .room-list__lock:hover {
   border-color: var(--color-hairline);
   transform: none;
   box-shadow: none;

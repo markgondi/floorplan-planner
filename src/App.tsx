@@ -249,6 +249,10 @@ export default function App() {
 
   function updateActiveRoom(patch: Partial<Room>) {
     if (!activeRoomId) return;
+    if (activeRoom?.locked) {
+      setNotice(`"${activeRoom.name.trim()}" is locked, so nothing in it can change. Click the padlock beside it in the Rooms list to unlock it.`);
+      return;
+    }
     const roomId = activeRoomId;
     setRooms((prev) => {
       const next = prev.map((r) => (r.id === roomId ? { ...r, ...patch } : r));
@@ -390,9 +394,27 @@ export default function App() {
     }
   }
 
+  // Locking a room protects it from every change, including being deleted.
+  function handleToggleRoomLock(id: string) {
+    const room = rooms.find((r) => r.id === id);
+    if (!room) return;
+    const next = { ...room, locked: !room.locked };
+    setRooms((prev) => prev.map((r) => (r.id === id ? next : r)));
+    setNotice(null);
+    // Through the same queue as every other change, so a save already waiting for this room
+    // (from a moment ago) can't land afterwards and undo the lock.
+    pendingSaves.current.set(id, next);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    flushSaves();
+  }
+
   async function handleDeleteRoom(id: string) {
     const room = rooms.find((r) => r.id === id);
     if (!room) return;
+    if (room.locked) {
+      setNotice(`"${room.name.trim()}" is locked, so it can't be deleted. Unlock it first.`);
+      return;
+    }
     if (!window.confirm(`Delete "${room.name}"? This removes its outline and all placed items — this can't be undone.`)) return;
     const remaining = rooms.filter((r) => r.id !== id);
     setRooms(remaining);
@@ -910,6 +932,7 @@ export default function App() {
             onCreate={handleCreateRoom}
             onRename={handleRenameRoom}
             onDuplicate={handleDuplicateRoom}
+            onToggleLock={handleToggleRoomLock}
             onDelete={handleDeleteRoom}
             onMoveToFolder={handleMoveRoomToFolder}
             onCreateFolder={handleCreateFolder}
@@ -944,6 +967,7 @@ export default function App() {
                 onZoomChange={(updater) => setZoom((z) => updater(z))}
                 onCursorMove={setCursor}
                 showLabels={showLabels}
+                locked={!!activeRoom.locked}
                 gridSnap={gridSnap}
                 wallTool={wallTool}
                 wallStart={wallStart}

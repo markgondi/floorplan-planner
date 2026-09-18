@@ -13,6 +13,7 @@ function rowToRoom(row: any, furnitureRows: any[]) {
     name: row.name,
     folderId: row.folder_id ?? null,
     ceilingHeight: row.ceiling_height ?? 240,
+    locked: row.locked === 1,
     scalePxPerUnit: row.scale_px_per_unit,
     unit: row.unit,
     floorplanImageUrl: row.floorplan_image_url,
@@ -76,6 +77,7 @@ export const handler: Handler = async (event) => {
           unit: "cm",
           floorplan_image_url: null,
           outline_json: null,
+          locked: 0,
         },
         [],
       ),
@@ -90,7 +92,7 @@ export const handler: Handler = async (event) => {
     await db.batch(
       [
         {
-          sql: `UPDATE rooms SET name = ?, folder_id = ?, ceiling_height = ?, scale_px_per_unit = ?, unit = ?, floorplan_image_url = ?, outline_json = ?, updated_at = datetime('now') WHERE id = ?`,
+          sql: `UPDATE rooms SET name = ?, folder_id = ?, ceiling_height = ?, scale_px_per_unit = ?, unit = ?, floorplan_image_url = ?, outline_json = ?, locked = ?, updated_at = datetime('now') WHERE id = ?`,
           args: [
             room.name,
             room.folderId ?? null,
@@ -99,6 +101,7 @@ export const handler: Handler = async (event) => {
             room.unit,
             room.floorplanImageUrl,
             JSON.stringify(room.outline),
+            room.locked ? 1 : 0,
             room.id,
           ],
         },

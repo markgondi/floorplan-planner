@@ -44,6 +44,8 @@ interface FloorplanCanvasProps {
   onZoomChange: (updater: (zoom: number) => number) => void;
   onCursorMove: (point: Point | null) => void;
   showLabels: boolean;
+  // A locked room can be looked at but not changed: no dragging, resizing or drawing.
+  locked: boolean;
   gridSnap: boolean;
   wallTool: WallTool;
   // Where the inner wall being drawn starts; null when no wall is in progress.
@@ -533,6 +535,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
     onZoomChange,
     onCursorMove,
     showLabels,
+    locked,
     gridSnap,
     wallTool,
     wallStart,
@@ -682,6 +685,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
   // finishes. An inner wall is done once its end is placed — to continue from it, start the
   // next wall on its end, which snaps.
   function placeWallPoint(p: Point, typed = false) {
+    if (locked) return;
     setTypedLength("");
     if (wallTool === "outline") {
       const first = outline[0];
@@ -876,6 +880,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
       onAddComment(toSvgPoint(e));
       return;
     }
+    if (locked && mode !== "select") return;
     const snapped = snapPoint(toSvgPoint(e), e.shiftKey);
     const p = { x: snapped.x, y: snapped.y };
     if (mode === "walls") {
@@ -905,6 +910,12 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
 
   function startDragFurniture(e: React.MouseEvent, item: Furniture) {
     if (spaceHeld) return;
+    if (locked) {
+      // Still selectable, so a locked room can be read; just not movable.
+      e.stopPropagation();
+      onSelectFurniture(item.id);
+      return;
+    }
     if (mode !== "arrange" && mode !== "select") return;
     e.stopPropagation();
     // Keep any selected wall — it's the Side view's viewing context, not a rival selection.
@@ -919,6 +930,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
   // pointer (in the area's own rotated frame), to the nearest 5 cm.
   const [resizing, setResizing] = useState<{ id: string; sx: number; sy: number } | null>(null);
   function startResizeZone(e: React.MouseEvent, item: Furniture, sx: number, sy: number) {
+    if (locked) return;
     e.stopPropagation();
     e.preventDefault();
     setResizing({ id: item.id, sx, sy });
@@ -990,7 +1002,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
   }
 
   function rotateSelected(delta: number) {
-    if (!selectedFurnitureId) return;
+    if (!selectedFurnitureId || locked) return;
     const item = furniture.find((f) => f.id === selectedFurnitureId);
     if (!item) return;
     onFurnitureChange(selectedFurnitureId, { rotation: rotateBy(item.rotation, delta) });

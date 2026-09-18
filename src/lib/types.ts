@@ -108,6 +108,8 @@ export const FURNITURE_PRESETS: FurniturePreset[] = [
 export interface Room {
   id: string;
   name: string;
+  // A locked room is protected from changes until it is unlocked in the Rooms list.
+  locked?: boolean;
   folderId: string | null;
   ceilingHeight: number;
   scalePxPerUnit: number;

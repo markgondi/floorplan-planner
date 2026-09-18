@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS rooms (
   unit TEXT DEFAULT 'cm',
   floorplan_image_url TEXT,
   outline_json TEXT,
+  -- A locked room can't be changed until it is unlocked in the Rooms list.
+  locked INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
