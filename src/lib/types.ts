@@ -81,7 +81,8 @@ export function itemColor(item: Pick<Furniture, "kind" | "color">): string {
 // unrenamed "Door" doesn't need "DOOR"), or when it came from Custom Item, where the tag
 // says nothing useful.
 export function itemOrigin(item: Pick<Furniture, "kind" | "label">): string | null {
-  if (item.kind === "generic") return null;
+  // An area names itself ("Lino Floor"), and Custom Item says nothing useful.
+  if (item.kind === "generic" || item.kind === "zone") return null;
   const name = item.label.trim().toLowerCase();
   const type = KIND_LABEL[item.kind];
   const preset = FURNITURE_PRESETS.find((p) => p.kind === item.kind);
@@ -98,6 +99,10 @@ export const FURNITURE_PRESETS: FurniturePreset[] = [
   { id: "bench", label: "Bench", kind: "bench", width: 120, depth: 45, height: 45, elevation: 0, color: KIND_COLOR.bench },
   { id: "custom-item", label: "Custom Item", kind: "generic", width: 60, depth: 60, height: 60, elevation: 0, color: KIND_COLOR.generic },
   { id: "staging-area", label: "Staging Area", kind: "zone", width: 200, depth: 150, height: 0, elevation: 0, color: KIND_COLOR.zone },
+  // Floor finishes: areas you lay over the plan to map what goes where, each with its m².
+  { id: "floor-lino", label: "Lino Floor", kind: "zone", width: 300, depth: 200, height: 0, elevation: 0, color: "#5f7c99" },
+  { id: "floor-carpet", label: "Carpet Floor", kind: "zone", width: 300, depth: 200, height: 0, elevation: 0, color: "#7c9a6c" },
+  { id: "floor-tile", label: "Tiled Floor", kind: "zone", width: 300, depth: 200, height: 0, elevation: 0, color: "#b59b6d" },
 ];
 
 export interface Room {

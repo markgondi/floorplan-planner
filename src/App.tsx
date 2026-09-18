@@ -17,7 +17,7 @@ import type { Point } from "./lib/geometry";
 import type { LibraryEntry, LibraryItem } from "./lib/library";
 import { belongsInLibrary, libraryKey } from "./lib/library";
 import type { Unit } from "./lib/units";
-import { formatDimensions, formatLength, formatScale } from "./lib/units";
+import { formatArea, formatDimensions, formatLength, formatScale } from "./lib/units";
 import { computeScale, mergeCollinearWalls, polygonPerimeterSegments, pxToReal, setWallFixed, setWallLength } from "./lib/geometry";
 import {
   createComment,
@@ -1025,6 +1025,17 @@ export default function App() {
                 unit,
               )}`
             : null
+        }
+        floorLabel={
+          (() => {
+            // One total per floor finish (or any other area) mapped out in this room.
+            const areas = new Map<string, number>();
+            for (const f of activeRoom?.furniture ?? []) {
+              if (f.kind !== "zone") continue;
+              areas.set(f.label.trim(), (areas.get(f.label.trim()) ?? 0) + f.width * f.depth);
+            }
+            return areas.size === 0 ? null : [...areas].map(([label, cm2]) => `${label} ${formatArea(cm2, 1)}`).join(" · ");
+          })()
         }
         wallLabel={
           selectedWall && selectedWallIndex !== null && activeRoom?.scalePxPerUnit

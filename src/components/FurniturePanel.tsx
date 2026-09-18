@@ -3,7 +3,7 @@ import type { Furniture, FurniturePreset } from "../lib/types";
 import { ITEM_PALETTE, KIND_LABEL, itemColor } from "../lib/types";
 import type { LibraryEntry } from "../lib/library";
 import type { Unit } from "../lib/units";
-import { formatDimensions } from "../lib/units";
+import { formatArea, formatDimensions } from "../lib/units";
 import DimensionInput from "./DimensionInput";
 import { ROTATE_STEP, ROTATE_STEP_LARGE, rotateBy } from "../lib/geometry";
 import AngleInput from "./AngleInput";
@@ -173,6 +173,7 @@ export default function FurniturePanel({
             >
               {item.kind !== "generic" && <div className="furniture-panel__kind mono">{KIND_LABEL[item.kind]}</div>}
               <NameInput value={item.label} onChange={(label) => onUpdate(item.id, { label })} />
+              {item.kind === "zone" && <div className="furniture-panel__area mono">{formatArea(item.width, item.depth)}</div>}
               <div className="furniture-panel__dims mono">
                 <label>
                   <span>L</span>

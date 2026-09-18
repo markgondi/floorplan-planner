@@ -14,7 +14,7 @@ import {
 import type { Comment, Furniture } from "../lib/types";
 import { itemColor, itemOrigin } from "../lib/types";
 import type { Unit } from "../lib/units";
-import { dimensionTokens, formatDimensions, formatLength, fromCm, toCm } from "../lib/units";
+import { dimensionTokens, formatArea, formatDimensions, formatLength, fromCm, toCm } from "../lib/units";
 import { exportSvgAsPng } from "../lib/export";
 import AngleInput from "./AngleInput";
 
@@ -1182,7 +1182,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
               >
                 <title>
                   {isZone
-                    ? `${item.label} — L × D ${formatDimensions([item.width, item.depth], unit)}. Drag a corner to resize.`
+                    ? `${item.label} — L × D ${formatDimensions([item.width, item.depth], unit)}, ${formatArea(item.width, item.depth)}. Drag a corner to resize.`
                     : `${item.label} — L × D × H ${formatDimensions([item.width, item.depth, item.height], unit)}`}
                 </title>
                 <FurnitureGlyph item={item} scalePxPerUnit={scalePxPerUnit} />
@@ -1246,6 +1246,7 @@ const FloorplanCanvas = forwardRef<FloorplanCanvasHandle, FloorplanCanvasProps>(
                 const dimsTokens = [
                   ...(origin ? [`${origin.toUpperCase()} ·`] : []),
                   ...dimensionTokens(item.kind === "zone" ? [item.width, item.depth] : [item.width, item.depth, item.height], unit),
+                  ...(item.kind === "zone" ? [formatArea(item.width, item.depth)] : []),
                 ];
                 const gap = 2.5;
                 const dims = fitLines(dimsTokens, frame.length, frame.thickness - nameBlock - gap, Math.min(8.5, name.size * 0.85), 5.5);

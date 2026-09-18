@@ -11,6 +11,8 @@ interface StatusBarProps {
   perimeterCm: number | null;
   selectionLabel: string | null;
   wallLabel: string | null;
+  // Floor areas mapped out in this room, e.g. "Lino Floor 12.4 m² · Carpet Floor 8.0 m²".
+  floorLabel: string | null;
   hint: string;
 }
 
@@ -32,6 +34,7 @@ export default function StatusBar({
   perimeterCm,
   selectionLabel,
   wallLabel,
+  floorLabel,
   hint,
 }: StatusBarProps) {
   return (
@@ -55,6 +58,7 @@ export default function StatusBar({
           />
         )}
         {perimeterCm !== null && <Cell label="Perimeter" value={formatLength(perimeterCm, unit)} />}
+        {floorLabel && <Cell label="Floors" value={floorLabel} />}
         {wallLabel && <Cell label="Wall" value={wallLabel} accent />}
         {selectionLabel && <Cell label="Selected" value={selectionLabel} accent />}
       </div>

@@ -34,6 +34,11 @@ export function formatScale(cmPerPx: number, unit: Unit): string {
   return formatLength(cmPerPx, unit, PRECISION[unit] + 3);
 }
 
+// A floor area in square metres, e.g. "6.0 m²" — what you order flooring by.
+export function formatArea(widthCm: number, depthCm: number): string {
+  return `${((widthCm * depthCm) / 10000).toFixed(1)} m²`;
+}
+
 export function formatDimensions(valuesCm: number[], unit: Unit): string {
   return dimensionTokens(valuesCm, unit).join(" ");
 }

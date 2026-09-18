@@ -1310,6 +1310,12 @@
   font-size: 11px;
 }
 
+/* An area's floor area, the figure you order flooring by. */
+.furniture-panel__area {
+  font-size: 11px;
+  color: var(--color-accent);
+}
+
 /* Typed rotation, in the Items panel and the canvas dock: reads as a value until clicked. */
 .furniture-panel__angle,
 .canvas-dock__angle {
